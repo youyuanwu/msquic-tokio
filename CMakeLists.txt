@@ -24,6 +24,7 @@ if(NOT msquic_release_POPULATED)
   FetchContent_Populate(msquic_release)
 endif()
 
+if(WIN32)
 # generate winmd. defer generation task in .metadata csproj.
 find_program (
     dotnet_exe
@@ -50,3 +51,13 @@ add_custom_command(
 add_custom_target(generate_winmd
   DEPENDS ${_out_winmd_paths}
 )
+else()
+  file(GLOB _msquic_dll 
+    ${msquic_release_SOURCE_DIR}/bin/libmsquic.so.*
+  )
+  # create a sym link
+  execute_process(
+    COMMAND ln -sf ${_msquic_dll} ${CMAKE_BINARY_DIR}/libmsquic.so # for linking
+    COMMAND ln -sf ${_msquic_dll} ${CMAKE_BINARY_DIR}/libmsquic.so.2 # for loading at runtime
+  )
+endif(WIN32)

@@ -9,3 +9,9 @@
     clippy::useless_transmute
 )]
 pub mod Microsoft;
+
+// In linux force to pull in pal lib for linking
+#[cfg(target_os = "linux")]
+extern crate mssf_pal;
+
+//#![link_args = "-Wl,-rpath /path/to/c_lib"]

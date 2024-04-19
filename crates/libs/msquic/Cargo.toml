@@ -6,4 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-"c" = {path = "../c", features = ["MsQuic"]}
+"c" = {path = "../c", features = ["MsQuic", "Win32_Foundation", "Win32_Networking_WinSock"]}
+"windows-core" = "0.54.0"

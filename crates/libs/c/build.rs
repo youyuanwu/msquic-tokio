@@ -7,16 +7,23 @@
 use std::{env, path::Path};
 
 fn main() {
+    let pkg_dir = String::from("build/_deps/msquic_release-src");
+    let package_root = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let project_root = package_root + "/../../../";
+    let abs_search_dir;
     if cfg!(windows) {
         // add link dir for fabric support libs. This is propagated to downstream targets
-        let dir = String::from("build\\_deps\\msquic_release-src\\lib");
-        let package_root = env::var("CARGO_MANIFEST_DIR").unwrap();
-        let abs_dir = package_root + "\\..\\..\\..\\" + &dir;
-        println!(
-            "cargo:rustc-link-search=native={}",
-            Path::new(&abs_dir).display()
-        );
+        abs_search_dir = project_root + &pkg_dir + "/lib";
     } else if cfg!(unix) {
-        panic!("unix not yet supported")
+        abs_search_dir = project_root + "build"; // hack: we create a symlink in the build dir to let ld not deal with .so versions
+                                                 //println!("cargo:rustc-link-arg=-Wl,-rpath,{}",abs_search_dir)
+    } else {
+        panic!("unsupport platform")
     }
+    println!(
+        "cargo:rustc-link-search=native={}",
+        Path::new(&abs_search_dir).display()
+    );
+    // This does not work for cargo test
+    // println!("cargo:rustc-env=LD_LIBRARY_PATH={}", abs_search_dir);
 }
