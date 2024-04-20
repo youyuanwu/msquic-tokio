@@ -2,11 +2,13 @@ cmake_minimum_required(VERSION 3.16)
 
 project(msquic-asio)
 
+set(_msquic_version "v2.3.5")
+
 if(WIN32)
-  set(release_url "https://github.com/microsoft/msquic/releases/download/v2.3.5/msquic_windows_x64_Release_schannel.zip")
+  set(release_url "https://github.com/microsoft/msquic/releases/download/${_msquic_version}/msquic_windows_x64_Release_schannel.zip")
 else()
   # linux
-  set(release_url "https://github.com/microsoft/msquic/releases/download/v2.3.5/msquic_linux_x64_Release_openssl.zip")
+  set(release_url "https://github.com/microsoft/msquic/releases/download/${_msquic_version}/msquic_linux_x64_Release_openssl.zip")
   find_package(OpenSSL REQUIRED)
   # openssl needs version 1.1. ubuntu 20.04 has it, 22.04 is too new.
 endif(WIN32)
@@ -61,3 +63,12 @@ else()
     COMMAND ln -sf ${_msquic_dll} ${CMAKE_BINARY_DIR}/libmsquic.so.2 # for loading at runtime
   )
 endif(WIN32)
+
+# downloading the msquic rust manual bindings.
+
+# message(STATUS "download msquic_bind")
+# file(DOWNLOAD
+#   https://raw.githubusercontent.com/microsoft/msquic/v2.3.5/src/lib.rs
+#   ${CMAKE_CURRENT_SOURCE_DIR}/crates/libs/c2/src/lib.rs
+#   TLS_VERIFY ON
+# )

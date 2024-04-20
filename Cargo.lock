@@ -3,12 +3,38 @@
 version = 3
 
 [[package]]
+name = "bitfield"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d7e60934ceec538daadb9d8432424ed043a904d8e0243f3c6446bce549a46ac"
+
+[[package]]
 name = "c"
 version = "0.1.0"
 dependencies = [
  "mssf-pal",
  "windows 0.54.0",
  "windows-core 0.54.0",
+]
+
+[[package]]
+name = "c-types"
+version = "3.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "557b349c631f2a0c9650871fd9371a8cee78dda558074a4f636ef3f47e4de17c"
+dependencies = [
+ "libc",
+ "windows-sys",
+]
+
+[[package]]
+name = "c2"
+version = "0.1.0"
+dependencies = [
+ "bitfield",
+ "c-types",
+ "libc",
+ "serde",
 ]
 
 [[package]]
@@ -235,6 +261,15 @@ name = "windows-result"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "749f0da9cc72d82e600d8d2e44cadd0b9eedb9038f71a1c58556ac1c5791813b"
+dependencies = [
+ "windows-targets 0.52.5",
+]
+
+[[package]]
+name = "windows-sys"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
 dependencies = [
  "windows-targets 0.52.5",
 ]
