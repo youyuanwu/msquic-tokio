@@ -1,6 +1,17 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
+//
+#![allow(
+    clippy::new_without_default,
+    clippy::let_and_return,
+    clippy::unnecessary_cast,
+    clippy::deref_addrof,
+    clippy::redundant_field_names,
+    clippy::cmp_null
+)]
+//
+
 #[allow(unused_imports)]
 use c_types::AF_INET;
 #[allow(unused_imports)]
@@ -129,7 +140,7 @@ impl Status {
 /// The different possible TLS providers used by MsQuic.
 pub type TlsProvider = u32;
 pub const TLS_PROVIDER_SCHANNEL: TlsProvider = 0;
-pub const TLS_PROVIDER_OPENSSL : TlsProvider = 1;
+pub const TLS_PROVIDER_OPENSSL: TlsProvider = 1;
 
 /// Configures how to process a registration's workload.
 pub type ExecutionProfile = u32;
@@ -956,7 +967,6 @@ pub struct StreamEventSendShutdownComplete {
     pub graceful: bool,
 }
 
-
 bitfield! {
     #[repr(C)]
     #[derive(Clone, Copy)]
@@ -970,7 +980,7 @@ bitfield! {
 #[derive(Copy, Clone)]
 pub struct StreamEventShutdownComplete {
     connection_shutdown: bool,
-    flags: StreamEventShutdownCompleteBitfields
+    flags: StreamEventShutdownCompleteBitfields,
 }
 
 #[repr(C)]
@@ -1095,15 +1105,10 @@ struct ApiTable {
         flags: SendFlags,
         client_send_context: *const c_void,
     ) -> u32,
-    resumption_ticket_validation_complete: extern "C" fn(
-        connection: Handle,
-        result: BOOLEAN,
-    ) -> u32,
-    certificate_validation_complete: extern "C" fn(
-        connection: Handle,
-        result: BOOLEAN,
-        tls_alert: TlsAlertCode
-    ) -> u32,
+    resumption_ticket_validation_complete:
+        extern "C" fn(connection: Handle, result: BOOLEAN) -> u32,
+    certificate_validation_complete:
+        extern "C" fn(connection: Handle, result: BOOLEAN, tls_alert: TlsAlertCode) -> u32,
 }
 
 #[link(name = "msquic")]
@@ -1546,32 +1551,17 @@ impl Connection {
         }
     }
 
-    pub fn resumption_ticket_validation_complete(
-        &self,
-        result: BOOLEAN,
-    ) {
-        let status = unsafe {
-            ((*self.table).resumption_ticket_validation_complete)(
-                self.handle,
-                result,
-            )
-        };
+    pub fn resumption_ticket_validation_complete(&self, result: BOOLEAN) {
+        let status =
+            unsafe { ((*self.table).resumption_ticket_validation_complete)(self.handle, result) };
         if Status::failed(status) {
             panic!("ticket validation completion failure 0x{:x}", status);
         }
     }
 
-    pub fn certificate_validation_complete(
-        &self,
-        result: BOOLEAN,
-        tls_alert: TlsAlertCode,
-    ) {
+    pub fn certificate_validation_complete(&self, result: BOOLEAN, tls_alert: TlsAlertCode) {
         let status = unsafe {
-            ((*self.table).certificate_validation_complete)(
-                self.handle,
-                result,
-                tls_alert,
-            )
+            ((*self.table).certificate_validation_complete)(self.handle, result, tls_alert)
         };
         if Status::failed(status) {
             panic!("ticket validation completion failure 0x{:x}", status);
