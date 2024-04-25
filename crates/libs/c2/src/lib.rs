@@ -1258,6 +1258,12 @@ impl Settings {
         self.other_flags |= (value as u8) << 3;
         self
     }
+
+    pub fn set_server_resumption_level(&mut self, value: u8) -> &mut Settings {
+        self.is_set_flags |= 1 << 28;
+        self.other_flags |= (value as u8) << 4;
+        self
+    }
 }
 
 impl CredentialConfig {
@@ -1567,6 +1573,21 @@ impl Connection {
             panic!("ticket validation completion failure 0x{:x}", status);
         }
     }
+
+    pub fn send_resumption_ticket(&self, flags: SendResumptionFlags) {
+        let status = unsafe {
+            (self
+                .table
+                .as_ref()
+                .unwrap()
+                .connection_send_resumption_ticket)(
+                self.handle, flags, 0, std::ptr::null()
+            )
+        };
+        if Status::failed(status) {
+            panic!("send_resumption_ticket 0x{:x}", status);
+        }
+    }
 }
 
 impl Drop for Connection {
@@ -1628,8 +1649,8 @@ impl Drop for Listener {
 }
 
 impl Stream {
-    pub fn new(context: *const c_void) -> Stream {
-        let api = unsafe { &*(context as *const Api) };
+    pub fn new(api: &Api) -> Stream {
+        //let api = unsafe { &*(context as *const Api) };
         Stream {
             table: api.table,
             handle: ptr::null(),
@@ -1696,6 +1717,12 @@ impl Stream {
         unsafe {
             ((*self.table).set_callback_handler)(self.handle, handler as *const c_void, context)
         };
+    }
+
+    pub fn receive_complete(&self, len: u64) {
+        let status =
+            (unsafe { self.table.as_ref().unwrap().stream_receive_complete })(self.handle, len);
+        assert!(Status::succeeded(status), "Code: 0x{:x}", status);
     }
 }
 
