@@ -53,6 +53,17 @@ add_custom_command(
 add_custom_target(generate_winmd
   DEPENDS ${_out_winmd_paths}
 )
+
+find_program(cargo_exe
+  NAMES cargo
+  REQUIRED
+)
+
+add_custom_target(generate_rust
+  COMMAND ${cargo_exe} run -p tools_api
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
 else()
   file(GLOB _msquic_dll 
     ${msquic_release_SOURCE_DIR}/bin/libmsquic.so.*

@@ -20,7 +20,7 @@ pub struct QConnection {
     ctx: Box<QConnectionCtx>,
 }
 
-pub struct QConnectionCtx {
+struct QConnectionCtx {
     _api: QApi,
     strm_tx: mpsc::Sender<QStream>,
     strm_rx: mpsc::Receiver<QStream>,
