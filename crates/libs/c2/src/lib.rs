@@ -1635,6 +1635,10 @@ impl Listener {
         }
     }
 
+    pub fn stop(&self) {
+        unsafe { ((*self.table).listener_stop)(self.handle) };
+    }
+
     pub fn close(&self) {
         unsafe {
             ((*self.table).listener_close)(self.handle);
@@ -1719,9 +1723,20 @@ impl Stream {
         };
     }
 
-    pub fn receive_complete(&self, len: u64) {
+    pub fn receive_complete(&self, len: u64) -> u32 {
+        //ec
         let status =
             (unsafe { self.table.as_ref().unwrap().stream_receive_complete })(self.handle, len);
+        assert!(Status::succeeded(status), "Code: 0x{:x}", status);
+        status
+    }
+
+    pub fn shutdown(&self, flags: StreamShutdownFlags, error_code: u62) {
+        let status = (unsafe { self.table.as_ref().unwrap().stream_shutdown })(
+            self.handle,
+            flags,
+            error_code,
+        );
         assert!(Status::succeeded(status), "Code: 0x{:x}", status);
     }
 }

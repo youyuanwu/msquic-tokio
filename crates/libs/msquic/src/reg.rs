@@ -1,10 +1,13 @@
+use std::sync::Arc;
+
 use c2::{Registration, RegistrationConfig};
 
 use crate::{utils::SBox, QApi};
 
+#[derive(Clone)]
 pub struct QRegistration {
     pub api: QApi,
-    pub inner: SBox<Registration>,
+    pub inner: Arc<SBox<Registration>>,
 }
 
 impl QRegistration {
@@ -12,7 +15,7 @@ impl QRegistration {
         let inner = Registration::new(&api.inner.inner, config);
         Self {
             api: api.clone(),
-            inner: inner.into(),
+            inner: Arc::new(SBox::new(inner)),
         }
     }
 }

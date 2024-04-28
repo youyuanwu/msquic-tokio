@@ -1,7 +1,9 @@
 use crate::{config::QConfiguration, info, reg::QRegistration, stream::QStream};
 use std::{
+    borrow::BorrowMut,
     ffi::c_void,
     io::{Error, ErrorKind},
+    sync::Mutex,
 };
 
 use c2::{
@@ -9,6 +11,7 @@ use c2::{
     CONNECTION_EVENT_CONNECTED, CONNECTION_EVENT_PEER_STREAM_STARTED, CONNECTION_EVENT_RESUMED,
     CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED, CONNECTION_EVENT_SHUTDOWN_COMPLETE,
     CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER, CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT,
+    CONNECTION_SHUTDOWN_FLAG_NONE,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -20,14 +23,35 @@ pub struct QConnection {
     ctx: Box<QConnectionCtx>,
 }
 
+#[derive(Debug, Clone)]
+enum ShutdownError {
+    Ok,                    // no error
+    Transport((u64, u32)), // ec and status
+    Peer(u64),             // ec
+    Complete,
+}
+
+enum StreamPayload {
+    Stream(QStream),
+    Stop(ShutdownError),
+}
+
+#[derive(Debug, PartialEq)]
+enum State {
+    Idle,
+    Frontend,
+    Backend,
+}
+
 struct QConnectionCtx {
     _api: QApi,
-    strm_tx: mpsc::Sender<QStream>,
-    strm_rx: mpsc::Receiver<QStream>,
-    conn_tx: Option<oneshot::Sender<()>>,
-    conn_rx: Option<oneshot::Receiver<()>>,
+    strm_tx: Option<mpsc::Sender<StreamPayload>>,
+    strm_rx: mpsc::Receiver<StreamPayload>,
+    conn_tx: Option<oneshot::Sender<ShutdownError>>,
+    conn_rx: Option<oneshot::Receiver<ShutdownError>>,
     shtdwn_tx: Option<oneshot::Sender<()>>,
     shtdwn_rx: Option<oneshot::Receiver<()>>,
+    state: Mutex<State>,
 }
 
 extern "C" fn qconnection_callback_handler(
@@ -38,12 +62,15 @@ extern "C" fn qconnection_callback_handler(
     assert!(!context.is_null());
     let ctx = unsafe { (context as *mut QConnectionCtx).as_mut().unwrap() };
     let status = 0;
-
+    let mut state = ctx.state.lock().unwrap();
+    *state = State::Backend;
     match event.event_type {
         CONNECTION_EVENT_CONNECTED => {
             info!("[{:?}] CONNECTION_EVENT_CONNECTED", connection);
             // server xor client connected
-            ctx.conn_tx.take().unwrap().send(()).unwrap();
+            if let Some(tx) = ctx.conn_tx.take() {
+                tx.send(ShutdownError::Ok).unwrap();
+            }
         }
         CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT => {
             let raw = unsafe { event.payload.shutdown_initiated_by_transport };
@@ -51,25 +78,47 @@ extern "C" fn qconnection_callback_handler(
                 "[{:?}] CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT ec=0x{:x} status=0x{:x}",
                 connection, raw.error_code, raw.status
             );
-            assert!(ctx.shtdwn_tx.is_some());
+            let err = ShutdownError::Transport((raw.error_code, raw.status));
+            if let Some(tx) = ctx.conn_tx.take() {
+                tx.send(err.clone()).unwrap();
+            }
+            if let Some(tx) = ctx.strm_tx.take() {
+                tx.blocking_send(StreamPayload::Stop(err)).unwrap();
+            }
         }
+        // Peer application called connection shutdown.
+        // Error code is application defined.
         CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER => {
+            let raw = unsafe { event.payload.shutdown_initiated_by_peer };
             info!(
-                "[{:?}] CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER",
-                connection,
+                "[{:?}] CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER: ec {}",
+                connection, raw.error_code,
             );
-            assert!(ctx.shtdwn_tx.is_some());
+            let err = ShutdownError::Peer(raw.error_code);
+            if let Some(tx) = ctx.conn_tx.take() {
+                tx.send(err.clone()).unwrap();
+            }
+            if let Some(tx) = ctx.strm_tx.take() {
+                tx.blocking_send(StreamPayload::Stop(err)).unwrap();
+            }
         }
+        // only invoked after user calls connection shutdown.
+        // This can happend without peer or transport.
         CONNECTION_EVENT_SHUTDOWN_COMPLETE => {
             info!("[{:?}] CONNECTION_EVENT_SHUTDOWN_COMPLETE", connection,);
-            assert!(ctx.shtdwn_tx.is_some());
-            // TODO: close stream channel
+            let err = ShutdownError::Complete;
+            if let Some(tx) = ctx.conn_tx.take() {
+                tx.send(err.clone()).unwrap();
+            }
+            // drop stream
+            if let Some(tx) = ctx.strm_tx.take() {
+                tx.blocking_send(StreamPayload::Stop(err)).unwrap();
+            }
             if let Some(tx) = ctx.shtdwn_tx.take() {
                 tx.send(()).unwrap();
             }
         }
         CONNECTION_EVENT_PEER_STREAM_STARTED => {
-            assert!(ctx.shtdwn_tx.is_some());
             // stream is accepted on server
             let raw = unsafe { event.payload.peer_stream_started };
             let h = raw.stream as Handle;
@@ -78,7 +127,9 @@ extern "C" fn qconnection_callback_handler(
                 connection, h
             );
             let s = QStream::attach(ctx._api.clone(), h);
-            ctx.strm_tx.blocking_send(s).unwrap();
+            if let Some(tx) = ctx.strm_tx.borrow_mut() {
+                tx.blocking_send(StreamPayload::Stream(s)).unwrap();
+            }
         }
         CONNECTION_EVENT_RESUMED => {
             info!("[{:?}] CONNECTION_EVENT_RESUMED", connection,);
@@ -101,18 +152,19 @@ extern "C" fn qconnection_callback_handler(
 }
 
 impl QConnectionCtx {
-    fn new(api: &QApi) -> Self {
+    fn new(api: &QApi, state: State) -> Self {
         let (strm_tx, strm_rx) = mpsc::channel(2);
         let (conn_tx, conn_rx) = oneshot::channel();
         let (shdwn_tx, shdwn_rx) = oneshot::channel();
         Self {
             _api: api.clone(),
-            strm_tx,
+            strm_tx: Some(strm_tx),
             strm_rx,
             conn_tx: Some(conn_tx),
             conn_rx: Some(conn_rx),
             shtdwn_tx: Some(shdwn_tx),
             shtdwn_rx: Some(shdwn_rx),
+            state: Mutex::new(state),
         }
     }
 }
@@ -121,7 +173,7 @@ impl QConnection {
     // this is for attaching accepted connections
     pub fn attach(api: QApi, h: Handle, config: &Configuration) -> Self {
         let c = Connection::from_parts(h, &api.inner.inner);
-        let context = Box::new(QConnectionCtx::new(&api));
+        let context = Box::new(QConnectionCtx::new(&api, State::Idle));
 
         c.set_callback_handler(
             qconnection_callback_handler,
@@ -143,7 +195,7 @@ impl QConnection {
     // open a client
     pub fn open(registration: &QRegistration) -> Self {
         let c = Connection::new(&registration.inner.inner);
-        let context = Box::new(QConnectionCtx::new(&registration.api));
+        let context = Box::new(QConnectionCtx::new(&registration.api, State::Idle));
         c.open(
             &registration.inner.inner,
             qconnection_callback_handler,
@@ -153,9 +205,19 @@ impl QConnection {
         Self::new(c, registration.api.clone(), context)
     }
 
-    // wait for connect callback.
-    pub async fn connect(&mut self) {
-        self.ctx.conn_rx.take().unwrap().await.unwrap()
+    // server wait for connect callback.
+    pub async fn connect(&mut self) -> Result<(), Error> {
+        {
+            let mut state = self.ctx.state.lock().unwrap();
+            *state = State::Frontend;
+        }
+        let payload = self.ctx.conn_rx.take().unwrap().await.unwrap();
+        match payload {
+            ShutdownError::Ok => Ok(()),
+            ShutdownError::Transport((_, status)) => Err(Error::from_raw_os_error(status as i32)),
+            ShutdownError::Peer(_) => Err(Error::from(ErrorKind::ConnectionAborted)),
+            ShutdownError::Complete => Err(Error::from(ErrorKind::ConnectionAborted)),
+        }
     }
 
     pub fn send_resumption_ticket(&self, flags: SendResumptionFlags) {
@@ -164,18 +226,36 @@ impl QConnection {
 
     // accept stream
     pub async fn accept(&mut self) -> Option<QStream> {
-        self.ctx.strm_rx.recv().await
+        let fu;
+        {
+            let mut state = self.ctx.state.lock().unwrap();
+            *state = State::Frontend;
+            fu = self.ctx.strm_rx.recv();
+        }
+        let payload = fu.await;
+        match payload {
+            Some(s) => match s {
+                StreamPayload::Stream(s) => Some(s),
+                StreamPayload::Stop(_) => None,
+            },
+            None => None, // channel closed
+        }
     }
 
+    // client start stream
     pub async fn start(
         &mut self,
         configuration: &QConfiguration,
         server_name: &str,
         server_port: u16,
     ) -> Result<(), Error> {
-        self.inner
-            .inner
-            .start(&configuration.inner.inner, server_name, server_port);
+        {
+            let mut state = self.ctx.state.lock().unwrap();
+            *state = State::Frontend;
+            self.inner
+                .inner
+                .start(&configuration.inner.inner, server_name, server_port);
+        }
         self.ctx
             .conn_rx
             .take()
@@ -183,5 +263,14 @@ impl QConnection {
             .await
             .map_or(Err(Error::from(ErrorKind::NotConnected)), Ok)?;
         Ok(())
+    }
+
+    pub async fn shutdown(&mut self) {
+        {
+            let mut state = self.ctx.state.lock().unwrap();
+            *state = State::Frontend;
+            self.inner.inner.shutdown(CONNECTION_SHUTDOWN_FLAG_NONE, 0); // ec
+        }
+        self.ctx.shtdwn_rx.take().unwrap().await.unwrap();
     }
 }

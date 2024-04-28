@@ -98,14 +98,7 @@ mod tests {
             q_config.load_cred(&cred_config);
         }
 
-        let mut l;
-
-        let local_address = Addr::ipv4(ADDRESS_FAMILY_UNSPEC, 4567_u16.to_be(), 0);
-        l = QListener::open(&q_reg, &q_config);
-        info!("Start listener.");
-        l.start(alpn.as_buffers(), &local_address);
-
-        //let rth = rt.handle().clone();
+        let q_req_copy = q_reg.clone();
         let (sht_tx, sht_rx) = oneshot::channel::<()>();
         let th = std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -113,23 +106,31 @@ mod tests {
                 .build()
                 .unwrap();
             rt.block_on(async {
+                let mut l;
+                {
+                    let local_address = Addr::ipv4(ADDRESS_FAMILY_UNSPEC, 4567_u16.to_be(), 0);
+                    l = QListener::open(&q_req_copy, &q_config);
+                    info!("Start listener.");
+                    let alpn = QBufferVec::from(args.as_slice());
+                    l.start(alpn.as_buffers(), &local_address).await;
+                }
                 let mut i = 0;
                 loop {
                     let conn_id = i;
                     info!("server accept conn {}", i);
                     i += 1;
                     let conn = l.accept().await;
-                    tokio::time::sleep(Duration::from_millis(1000)).await;
                     if conn.is_none() {
                         info!("server accepted conn end");
                         break;
                     }
+                    let rth = rt.handle().clone();
                     // use another task to handle conn
                     rt.spawn(async move {
                         let mut conn = conn.unwrap();
                         info!("server accepted conn id={}", conn_id);
                         info!("server conn connect");
-                        conn.connect().await;
+                        conn.connect().await.unwrap();
                         tokio::time::sleep(Duration::from_millis(1)).await;
                         conn.send_resumption_ticket(SEND_RESUMPTION_FLAG_NONE);
                         tokio::time::sleep(Duration::from_millis(1)).await;
@@ -140,17 +141,24 @@ mod tests {
                                 info!("server accept stream end");
                                 break;
                             }
-                            info!("server accepted stream");
-                            let mut s = s.unwrap();
-                            let mut buff = [0_u8; 99];
-                            let read = s.receive(buff.as_mut_slice()).await.unwrap();
-                            assert_eq!(read as usize, "world".len());
-                            let args: [QVecBuffer; 1] = [QVecBuffer::from("hello world")];
-                            s.send(args.as_slice(), SEND_FLAG_FIN).await.unwrap();
+                            rth.spawn(async move {
+                                info!("server accepted stream");
+                                let mut s = s.unwrap();
+                                let mut buff = [0_u8; 99];
+                                info!("server stream receive");
+                                let read = s.receive(buff.as_mut_slice()).await.unwrap();
+                                assert_eq!(read as usize, "world".len());
+                                let args: [QVecBuffer; 1] = [QVecBuffer::from("hello world")];
+                                info!("server stream send");
+                                s.send(args.as_slice(), SEND_FLAG_FIN).await.unwrap();
+                                s.shutdown().await;
+                            });
                         }
+                        conn.shutdown().await;
                     });
-                    break; // only accept for 1 request
+                    //break; // only accept for 1 request
                 }
+                l.stop().await;
 
                 sht_rx.await.unwrap();
                 info!("tokio shutdown");
@@ -187,7 +195,7 @@ mod tests {
                 info!("client stream open");
                 let mut st = QStream::open(&conn, STREAM_OPEN_FLAG_NONE);
                 info!("client stream start");
-                st.start(STREAM_START_FLAG_NONE).await;
+                st.start(STREAM_START_FLAG_NONE).await.unwrap();
                 let args: [QVecBuffer; 1] = [QVecBuffer::from("hello")];
                 info!("client stream send");
                 st.send(args.as_slice(), SEND_FLAG_FIN).await.unwrap();
@@ -197,7 +205,8 @@ mod tests {
                 info!("client stream receive");
                 let read = st.receive(buff.as_mut_slice()).await.unwrap();
                 info!("client stream receive read :{}", read);
-                // TODO: read write
+                st.shutdown().await;
+                conn.shutdown().await;
                 // shutdown server
                 sht_tx.send(()).unwrap();
             });
