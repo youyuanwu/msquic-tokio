@@ -143,3 +143,116 @@ impl QListener {
         self.ctx.stop_rx.take().unwrap().await.unwrap();
     }
 }
+
+// Experimental code
+
+// extern "C" fn listener_handler2<T1: OnNewConnectionCallback, T2: OnStopCompleteCallback>(
+//     listener: Handle,
+//     context: *mut c_void,
+//     event: &ListenerEvent,
+// ) -> u32 {
+//     assert!(!context.is_null());
+//     let ctx = unsafe { (context as *mut QListnerCtx2<T1, T2>).as_mut().unwrap() };
+//     let mut status = 0;
+//     match event.event_type {
+//         LISTENER_EVENT_NEW_CONNECTION => {
+//             let raw = unsafe { event.payload.new_connection };
+//             let h = raw.connection as Handle;
+//             let info = unsafe { raw.info.as_ref().unwrap() };
+//             info!(
+//                 "[{:?}] LISTENER_EVENT_NEW_CONNECTION conn=[{:?}] info={:?}",
+//                 listener, h, info
+//             );
+//             if let Some(cb) = ctx.on_new_connection.as_mut() {
+//                 status = cb.invoke(h);
+//             }
+//         }
+//         QUIC_LISTENER_EVENT_STOP_COMPLETE => {
+//             info!("[{:?}] QUIC_LISTENER_EVENT_STOP_COMPLETE", listener);
+//             if let Some(cb) = ctx.on_stop_complete.take() {
+//                 status = cb.invoke();
+//             }
+//         }
+//         _ => {
+//             unreachable!()
+//         }
+//     }
+//     status
+// }
+
+// // callback type for new connection
+// pub trait OnNewConnectionCallback {
+//     fn invoke(&mut self, h: Handle) -> u32;
+// }
+
+// pub trait OnStopCompleteCallback {
+//     fn invoke(self) -> u32;
+// }
+
+// struct QListnerCtx2<T1: OnNewConnectionCallback, T2: OnStopCompleteCallback> {
+//     on_new_connection: Option<T1>,
+//     on_stop_complete: Option<T2>,
+// }
+
+// pub struct QListenerBase<T1: OnNewConnectionCallback, T2: OnStopCompleteCallback> {
+//     _api: QApi,
+//     inner: SBox<Listener>,
+//     ctx: Box<QListnerCtx2<T1, T2>>,
+// }
+
+// impl<T1: OnNewConnectionCallback, T2: OnStopCompleteCallback> QListenerBase<T1, T2> {
+//     // server open listener
+//     pub fn open_inner(
+//         registration: &QRegistration,
+//         on_new_connection: Option<T1>,
+//         on_stop_complete: Option<T2>,
+//     ) -> Self {
+//         let context = Box::new(QListnerCtx2 {
+//             on_new_connection,
+//             on_stop_complete,
+//         });
+//         let l = Listener::new(
+//             &registration.inner.inner,
+//             listener_handler2::<T1, T2>,
+//             (&*context) as *const QListnerCtx2<T1, T2> as *const c_void,
+//         );
+//         Self {
+//             _api: registration.api.clone(),
+//             inner: SBox { inner: l },
+//             ctx: context,
+//         }
+//     }
+// }
+
+// pub struct NewConnCallback {}
+
+// impl OnNewConnectionCallback for NewConnCallback {
+//     fn invoke(&mut self, _h: Handle) -> u32 {
+//         todo!()
+//     }
+// }
+
+// pub struct StopCompleteCallback {}
+
+// impl OnStopCompleteCallback for StopCompleteCallback {
+//     fn invoke(self) -> u32 {
+//         todo!()
+//     }
+// }
+
+// pub struct QListener2 {
+//     inner: QListenerBase<NewConnCallback, StopCompleteCallback>,
+// }
+
+// impl QListener2 {
+//     pub fn open(registration: &QRegistration, configuration: &QConfiguration) -> Self {
+//         let on_new_connection = NewConnCallback {};
+//         let on_stop_complete = StopCompleteCallback {};
+//         let inner = QListenerBase::open_inner(
+//             registration,
+//             Some(on_new_connection),
+//             Some(on_stop_complete),
+//         );
+//         Self { inner }
+//     }
+// }
