@@ -1,10 +1,10 @@
 use std::{ffi::c_void, sync::Arc};
 
 use c::Microsoft::MsQuic::{
-    MsQuicClose, MsQuicOpenVersion, QUIC_API_TABLE, QUIC_API_VERSION_2, QUIC_EXECUTION_PROFILE,
-    QUIC_EXECUTION_PROFILE_LOW_LATENCY, QUIC_EXECUTION_PROFILE_TYPE_MAX_THROUGHPUT,
-    QUIC_EXECUTION_PROFILE_TYPE_REAL_TIME, QUIC_EXECUTION_PROFILE_TYPE_SCAVENGER,
-    QUIC_REGISTRATION_CONFIG,
+    MsQuicClose, MsQuicOpenVersion, HQUIC, QUIC_API_TABLE, QUIC_API_VERSION_2,
+    QUIC_EXECUTION_PROFILE, QUIC_EXECUTION_PROFILE_LOW_LATENCY,
+    QUIC_EXECUTION_PROFILE_TYPE_MAX_THROUGHPUT, QUIC_EXECUTION_PROFILE_TYPE_REAL_TIME,
+    QUIC_EXECUTION_PROFILE_TYPE_SCAVENGER, QUIC_HANDLE, QUIC_REGISTRATION_CONFIG,
 };
 use windows_core::{Result, PCSTR};
 
@@ -48,7 +48,7 @@ impl Drop for ApiInner {
 }
 
 pub struct Handle {
-    h: *const c_void,
+    h: HQUIC,
 }
 
 impl Default for Handle {
@@ -60,16 +60,16 @@ impl Default for Handle {
 impl Handle {
     pub fn new() -> Self {
         Self {
-            h: std::ptr::null(),
+            h: HQUIC::default(),
         }
     }
 
-    pub fn put(&mut self) -> *mut *mut c_void {
-        std::ptr::addr_of_mut!(self.h) as *mut *mut c_void
+    pub fn put(&mut self) -> *mut *mut QUIC_HANDLE {
+        std::ptr::addr_of_mut!(self.h) as *mut *mut QUIC_HANDLE
     }
 
-    pub fn get(&self) -> *const c_void {
-        self.h
+    pub fn get(&self) -> *mut QUIC_HANDLE {
+        self.h.0 as *mut QUIC_HANDLE
     }
 }
 
@@ -97,10 +97,10 @@ impl Api {
             ExecutionProfile: config.execution_profile.into(),
         };
         let f = self.api.get_api().RegistrationOpen.unwrap();
-        let mut h = Handle::new();
+        let mut h = Handle::default();
         let hr = unsafe { f(&arg, h.put()) };
         hr.ok()?;
-        assert_ne!(h.h, std::ptr::null());
+        assert_ne!(h.h, HQUIC::default());
         Ok(h)
     }
 

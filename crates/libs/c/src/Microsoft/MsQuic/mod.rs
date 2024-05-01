@@ -1127,6 +1127,33 @@ impl core::fmt::Debug for QUIC_TLS_PROVIDER {
         f.debug_tuple("QUIC_TLS_PROVIDER").field(&self.0).finish()
     }
 }
+#[repr(transparent)]
+#[derive(PartialEq, Eq)]
+pub struct HQUIC(pub isize);
+impl HQUIC {
+    pub fn is_invalid(&self) -> bool {
+        self.0 == 0
+    }
+}
+impl Default for HQUIC {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+impl Clone for HQUIC {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl Copy for HQUIC {}
+impl core::fmt::Debug for HQUIC {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("HQUIC").field(&self.0).finish()
+    }
+}
+impl windows_core::TypeKind for HQUIC {
+    type TypeKind = windows_core::CopyType;
+}
 #[repr(C)]
 #[cfg(all(feature = "Win32_Foundation", feature = "Win32_Networking_WinSock"))]
 pub struct QUIC_API_TABLE {
@@ -1833,7 +1860,7 @@ impl Default for QUIC_CONNECTION_EVENT_0_8 {
 #[repr(C)]
 #[cfg(all(feature = "Win32_Foundation", feature = "Win32_Networking_WinSock"))]
 pub struct QUIC_CONNECTION_EVENT_0_9 {
-    pub Stream: *mut core::ffi::c_void,
+    pub Stream: *mut QUIC_HANDLE,
     pub Flags: QUIC_STREAM_OPEN_FLAGS,
 }
 #[cfg(all(feature = "Win32_Foundation", feature = "Win32_Networking_WinSock"))]
@@ -2275,6 +2302,28 @@ impl Default for QUIC_GLOBAL_SETTINGS_0_0 {
         unsafe { core::mem::zeroed() }
     }
 }
+#[repr(transparent)]
+#[derive(PartialEq, Eq)]
+pub struct QUIC_HANDLE(pub isize);
+impl Default for QUIC_HANDLE {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+impl Clone for QUIC_HANDLE {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl Copy for QUIC_HANDLE {}
+impl core::fmt::Debug for QUIC_HANDLE {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("QUIC_HANDLE").field(&self.0).finish()
+    }
+}
+impl windows_core::TypeKind for QUIC_HANDLE {
+    type TypeKind = windows_core::CopyType;
+}
 #[repr(C)]
 pub struct QUIC_HANDSHAKE_INFO {
     pub TlsProtocolVersion: QUIC_TLS_PROTOCOL_VERSION,
@@ -2379,7 +2428,7 @@ impl Default for QUIC_LISTENER_EVENT_0 {
 #[cfg(feature = "Win32_Networking_WinSock")]
 pub struct QUIC_LISTENER_EVENT_0_0 {
     pub Info: *const QUIC_NEW_CONNECTION_INFO,
-    pub Connection: *mut core::ffi::c_void,
+    pub Connection: *mut QUIC_HANDLE,
 }
 #[cfg(feature = "Win32_Networking_WinSock")]
 impl Copy for QUIC_LISTENER_EVENT_0_0 {}
@@ -3894,28 +3943,28 @@ pub type MsQuicOpenVersionFn = Option<
     ) -> windows_core::HRESULT,
 >;
 pub type QUIC_CONFIGURATION_CLOSE_FN =
-    Option<unsafe extern "system" fn(configuration: *const core::ffi::c_void)>;
+    Option<unsafe extern "system" fn(configuration: *const QUIC_HANDLE)>;
 pub type QUIC_CONFIGURATION_LOAD_CREDENTIAL_FN = Option<
     unsafe extern "system" fn(
-        configuration: *const core::ffi::c_void,
+        configuration: *const QUIC_HANDLE,
         credconfig: *const QUIC_CREDENTIAL_CONFIG,
     ) -> windows_core::HRESULT,
 >;
 pub type QUIC_CONFIGURATION_OPEN_FN = Option<
     unsafe extern "system" fn(
-        registration: *const core::ffi::c_void,
+        registration: *const QUIC_HANDLE,
         alpnbuffers: *const QUIC_BUFFER,
         alpnbuffercount: u32,
         settings: *const QUIC_SETTINGS,
         settingssize: u32,
         context: *const core::ffi::c_void,
-        configuration: *mut *mut core::ffi::c_void,
+        configuration: *mut *mut QUIC_HANDLE,
     ) -> windows_core::HRESULT,
 >;
 #[cfg(all(feature = "Win32_Foundation", feature = "Win32_Networking_WinSock"))]
 pub type QUIC_CONNECTION_CALLBACK = Option<
     unsafe extern "system" fn(
-        connection: *const core::ffi::c_void,
+        connection: *const QUIC_HANDLE,
         context: *const core::ffi::c_void,
         event: *mut QUIC_CONNECTION_EVENT,
     ) -> windows_core::HRESULT,
@@ -3923,11 +3972,11 @@ pub type QUIC_CONNECTION_CALLBACK = Option<
 pub type QUIC_CONNECTION_CALLBACK_HANDLER =
     Option<unsafe extern "system" fn() -> windows_core::HRESULT>;
 pub type QUIC_CONNECTION_CLOSE_FN =
-    Option<unsafe extern "system" fn(connection: *const core::ffi::c_void)>;
+    Option<unsafe extern "system" fn(connection: *const QUIC_HANDLE)>;
 #[cfg(feature = "Win32_Foundation")]
 pub type QUIC_CONNECTION_COMP_CERT_FN = Option<
     unsafe extern "system" fn(
-        connection: *const core::ffi::c_void,
+        connection: *const QUIC_HANDLE,
         result: windows::Win32::Foundation::BOOLEAN,
         tlsalert: QUIC_TLS_ALERT_CODES,
     ) -> windows_core::HRESULT,
@@ -3935,21 +3984,21 @@ pub type QUIC_CONNECTION_COMP_CERT_FN = Option<
 #[cfg(feature = "Win32_Foundation")]
 pub type QUIC_CONNECTION_COMP_RESUMPTION_FN = Option<
     unsafe extern "system" fn(
-        connection: *const core::ffi::c_void,
+        connection: *const QUIC_HANDLE,
         result: windows::Win32::Foundation::BOOLEAN,
     ) -> windows_core::HRESULT,
 >;
 pub type QUIC_CONNECTION_OPEN_FN = Option<
     unsafe extern "system" fn(
-        registration: *const core::ffi::c_void,
+        registration: *const QUIC_HANDLE,
         handler: QUIC_CONNECTION_CALLBACK_HANDLER,
         context: *const core::ffi::c_void,
-        connection: *mut *mut core::ffi::c_void,
+        connection: *mut *mut QUIC_HANDLE,
     ) -> windows_core::HRESULT,
 >;
 pub type QUIC_CONNECTION_SEND_RESUMPTION_FN = Option<
     unsafe extern "system" fn(
-        connection: *const core::ffi::c_void,
+        connection: *const QUIC_HANDLE,
         flags: QUIC_SEND_RESUMPTION_FLAGS,
         datalength: u16,
         resumptiondata: *const u8,
@@ -3957,21 +4006,21 @@ pub type QUIC_CONNECTION_SEND_RESUMPTION_FN = Option<
 >;
 pub type QUIC_CONNECTION_SET_CONFIGURATION_FN = Option<
     unsafe extern "system" fn(
-        connection: *const core::ffi::c_void,
-        configuration: *const core::ffi::c_void,
+        connection: *const QUIC_HANDLE,
+        configuration: *const QUIC_HANDLE,
     ) -> windows_core::HRESULT,
 >;
 pub type QUIC_CONNECTION_SHUTDOWN_FN = Option<
     unsafe extern "system" fn(
-        connection: *const core::ffi::c_void,
+        connection: *const QUIC_HANDLE,
         flags: QUIC_CONNECTION_SHUTDOWN_FLAGS,
         errorcode: u64,
     ),
 >;
 pub type QUIC_CONNECTION_START_FN = Option<
     unsafe extern "system" fn(
-        connection: *const core::ffi::c_void,
-        configuration: *const core::ffi::c_void,
+        connection: *const QUIC_HANDLE,
+        configuration: *const QUIC_HANDLE,
         family: u16,
         servername: windows_core::PCSTR,
         serverport: u16,
@@ -3979,7 +4028,7 @@ pub type QUIC_CONNECTION_START_FN = Option<
 >;
 pub type QUIC_CREDENTIAL_LOAD_COMPLETE = Option<
     unsafe extern "system" fn(
-        configuration: *const core::ffi::c_void,
+        configuration: *const QUIC_HANDLE,
         context: *const core::ffi::c_void,
         status: windows_core::HRESULT,
     ),
@@ -3987,7 +4036,7 @@ pub type QUIC_CREDENTIAL_LOAD_COMPLETE = Option<
 pub type QUIC_CREDENTIAL_LOAD_COMPLETE_HANDLER = Option<unsafe extern "system" fn()>;
 pub type QUIC_DATAGRAM_SEND_FN = Option<
     unsafe extern "system" fn(
-        connection: *const core::ffi::c_void,
+        connection: *const QUIC_HANDLE,
         buffers: *const QUIC_BUFFER,
         buffercount: u32,
         flags: QUIC_SEND_FLAGS,
@@ -3995,10 +4044,10 @@ pub type QUIC_DATAGRAM_SEND_FN = Option<
     ) -> windows_core::HRESULT,
 >;
 pub type QUIC_GET_CONTEXT_FN =
-    Option<unsafe extern "system" fn(handle: *const core::ffi::c_void) -> *mut core::ffi::c_void>;
+    Option<unsafe extern "system" fn(handle: *const QUIC_HANDLE) -> *mut core::ffi::c_void>;
 pub type QUIC_GET_PARAM_FN = Option<
     unsafe extern "system" fn(
-        handle: *const core::ffi::c_void,
+        handle: *const QUIC_HANDLE,
         param: u32,
         bufferlength: *mut u32,
         buffer: *mut core::ffi::c_void,
@@ -4007,62 +4056,60 @@ pub type QUIC_GET_PARAM_FN = Option<
 #[cfg(feature = "Win32_Networking_WinSock")]
 pub type QUIC_LISTENER_CALLBACK = Option<
     unsafe extern "system" fn(
-        listener: *const core::ffi::c_void,
+        listener: *const QUIC_HANDLE,
         context: *const core::ffi::c_void,
         event: *mut QUIC_LISTENER_EVENT,
     ) -> windows_core::HRESULT,
 >;
 pub type QUIC_LISTENER_CALLBACK_HANDLER =
     Option<unsafe extern "system" fn() -> windows_core::HRESULT>;
-pub type QUIC_LISTENER_CLOSE_FN =
-    Option<unsafe extern "system" fn(listener: *const core::ffi::c_void)>;
+pub type QUIC_LISTENER_CLOSE_FN = Option<unsafe extern "system" fn(listener: *const QUIC_HANDLE)>;
 pub type QUIC_LISTENER_OPEN_FN = Option<
     unsafe extern "system" fn(
-        registration: *const core::ffi::c_void,
+        registration: *const QUIC_HANDLE,
         handler: QUIC_LISTENER_CALLBACK_HANDLER,
         context: *const core::ffi::c_void,
-        listener: *mut *mut core::ffi::c_void,
+        listener: *mut *mut QUIC_HANDLE,
     ) -> windows_core::HRESULT,
 >;
 #[cfg(feature = "Win32_Networking_WinSock")]
 pub type QUIC_LISTENER_START_FN = Option<
     unsafe extern "system" fn(
-        listener: *const core::ffi::c_void,
+        listener: *const QUIC_HANDLE,
         alpnbuffers: *const QUIC_BUFFER,
         alpnbuffercount: u32,
         localaddress: *const windows::Win32::Networking::WinSock::SOCKADDR_INET,
     ) -> windows_core::HRESULT,
 >;
-pub type QUIC_LISTENER_STOP_FN =
-    Option<unsafe extern "system" fn(listener: *const core::ffi::c_void)>;
+pub type QUIC_LISTENER_STOP_FN = Option<unsafe extern "system" fn(listener: *const QUIC_HANDLE)>;
 pub type QUIC_REGISTRATION_CLOSE_FN =
-    Option<unsafe extern "system" fn(registration: *const core::ffi::c_void)>;
+    Option<unsafe extern "system" fn(registration: *const QUIC_HANDLE)>;
 pub type QUIC_REGISTRATION_OPEN_FN = Option<
     unsafe extern "system" fn(
         config: *const QUIC_REGISTRATION_CONFIG,
-        registration: *mut *mut core::ffi::c_void,
+        registration: *mut *mut QUIC_HANDLE,
     ) -> windows_core::HRESULT,
 >;
 pub type QUIC_REGISTRATION_SHUTDOWN_FN = Option<
     unsafe extern "system" fn(
-        registration: *const core::ffi::c_void,
+        registration: *const QUIC_HANDLE,
         flags: QUIC_CONNECTION_SHUTDOWN_FLAGS,
         errorcode: u64,
     ),
 >;
 pub type QUIC_SET_CALLBACK_HANDLER_FN = Option<
     unsafe extern "system" fn(
-        handle: *const core::ffi::c_void,
+        handle: *const QUIC_HANDLE,
         handler: *const core::ffi::c_void,
         context: *const core::ffi::c_void,
     ),
 >;
 pub type QUIC_SET_CONTEXT_FN = Option<
-    unsafe extern "system" fn(handle: *const core::ffi::c_void, context: *const core::ffi::c_void),
+    unsafe extern "system" fn(handle: *const QUIC_HANDLE, context: *const core::ffi::c_void),
 >;
 pub type QUIC_SET_PARAM_FN = Option<
     unsafe extern "system" fn(
-        handle: *const core::ffi::c_void,
+        handle: *const QUIC_HANDLE,
         param: u32,
         bufferlength: u32,
         buffer: *const core::ffi::c_void,
@@ -4071,35 +4118,35 @@ pub type QUIC_SET_PARAM_FN = Option<
 #[cfg(feature = "Win32_Foundation")]
 pub type QUIC_STREAM_CALLBACK = Option<
     unsafe extern "system" fn(
-        stream: *const core::ffi::c_void,
+        stream: *const QUIC_HANDLE,
         context: *const core::ffi::c_void,
         event: *mut QUIC_STREAM_EVENT,
     ) -> windows_core::HRESULT,
 >;
 pub type QUIC_STREAM_CALLBACK_HANDLER =
     Option<unsafe extern "system" fn() -> windows_core::HRESULT>;
-pub type QUIC_STREAM_CLOSE_FN = Option<unsafe extern "system" fn(stream: *const core::ffi::c_void)>;
+pub type QUIC_STREAM_CLOSE_FN = Option<unsafe extern "system" fn(stream: *const QUIC_HANDLE)>;
 pub type QUIC_STREAM_OPEN_FN = Option<
     unsafe extern "system" fn(
-        connection: *const core::ffi::c_void,
+        connection: *const QUIC_HANDLE,
         flags: QUIC_STREAM_OPEN_FLAGS,
         handler: QUIC_STREAM_CALLBACK_HANDLER,
         context: *const core::ffi::c_void,
-        stream: *mut *mut core::ffi::c_void,
+        stream: *mut *mut QUIC_HANDLE,
     ) -> windows_core::HRESULT,
 >;
 pub type QUIC_STREAM_RECEIVE_COMPLETE_FN =
-    Option<unsafe extern "system" fn(stream: *const core::ffi::c_void, bufferlength: u64)>;
+    Option<unsafe extern "system" fn(stream: *const QUIC_HANDLE, bufferlength: u64)>;
 #[cfg(feature = "Win32_Foundation")]
 pub type QUIC_STREAM_RECEIVE_SET_ENABLED_FN = Option<
     unsafe extern "system" fn(
-        stream: *const core::ffi::c_void,
+        stream: *const QUIC_HANDLE,
         isenabled: windows::Win32::Foundation::BOOLEAN,
     ) -> windows_core::HRESULT,
 >;
 pub type QUIC_STREAM_SEND_FN = Option<
     unsafe extern "system" fn(
-        stream: *const core::ffi::c_void,
+        stream: *const QUIC_HANDLE,
         buffers: *const QUIC_BUFFER,
         buffercount: u32,
         flags: QUIC_SEND_FLAGS,
@@ -4108,14 +4155,14 @@ pub type QUIC_STREAM_SEND_FN = Option<
 >;
 pub type QUIC_STREAM_SHUTDOWN_FN = Option<
     unsafe extern "system" fn(
-        stream: *const core::ffi::c_void,
+        stream: *const QUIC_HANDLE,
         flags: QUIC_STREAM_SHUTDOWN_FLAGS,
         errorcode: u64,
     ) -> windows_core::HRESULT,
 >;
 pub type QUIC_STREAM_START_FN = Option<
     unsafe extern "system" fn(
-        stream: *const core::ffi::c_void,
+        stream: *const QUIC_HANDLE,
         flags: QUIC_STREAM_START_FLAGS,
     ) -> windows_core::HRESULT,
 >;

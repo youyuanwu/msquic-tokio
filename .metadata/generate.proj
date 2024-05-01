@@ -7,9 +7,12 @@
         <ScanArch>x64</ScanArch>
     </PropertyGroup>
     <ItemGroup>
+        <ScraperRsp Include="scraper.settings.rsp"/>
+    </ItemGroup>
+    <ItemGroup>
         <ImportLibs Include="..\build\_deps\msquic_release-src\lib\msquic.lib" />
         <Partition Include="MsQuic.c">
-            <TraverseFiles>..\include\msquic.h;..\build\_deps\msquic_release-src\include\msqiuc_winuser.h</TraverseFiles>
+            <TraverseFiles>..\build\_deps\msquic_release-src\include\msquic.h;..\build\_deps\msquic_release-src\include\msqiuc_winuser.h</TraverseFiles>
             <Namespace>Microsoft.MsQuic</Namespace>
         </Partition>
     </ItemGroup>
