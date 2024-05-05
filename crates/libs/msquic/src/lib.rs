@@ -2,13 +2,9 @@ use std::sync::Arc;
 
 use c2::Api;
 
-#[cfg(not(test))]
-pub use log::info;
-
 use utils::SBox;
 
-#[cfg(test)]
-pub use std::println as info;
+pub use tracing::info;
 
 pub mod buffer;
 pub mod config;
@@ -58,12 +54,11 @@ mod tests {
         QApi,
     };
 
-    #[cfg(test)]
-    use std::println as info;
+    use super::info;
 
     #[test]
     fn basic_test() {
-        let _ = env_logger::try_init();
+        tracing_subscriber::fmt().init();
         info!("Test start");
         let api = QApi::default();
 
@@ -99,13 +94,15 @@ mod tests {
         }
 
         let q_req_copy = q_reg.clone();
-        let (sht_tx, sht_rx) = oneshot::channel::<()>();
+        let (sht_tx, mut sht_rx) = oneshot::channel::<()>();
         let th = std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_time()
                 .build()
                 .unwrap();
             rt.block_on(async {
+                // config needs to be dropped before reg.
+                let q_config = q_config;
                 let mut l;
                 {
                     let local_address = Addr::ipv4(ADDRESS_FAMILY_UNSPEC, 4567_u16.to_be(), 0);
@@ -119,7 +116,13 @@ mod tests {
                     let conn_id = i;
                     info!("server accept conn {}", i);
                     i += 1;
-                    let conn = l.accept().await;
+                    let conn = tokio::select! {
+                        val = l.accept() => val,
+                        _ = &mut sht_rx => {
+                            info!("server accepted interrupted.");
+                            None // stop accept and break.
+                        }
+                    };
                     if conn.is_none() {
                         info!("server accepted conn end");
                         break;
@@ -147,22 +150,27 @@ mod tests {
                                 let mut buff = [0_u8; 99];
                                 info!("server stream receive");
                                 let read = s.receive(buff.as_mut_slice()).await.unwrap();
+                                info!("server received len {}", read);
                                 assert_eq!(read as usize, "world".len());
                                 let args: [QVecBuffer; 1] = [QVecBuffer::from("hello world")];
                                 info!("server stream send");
                                 s.send(args.as_slice(), SEND_FLAG_FIN).await.unwrap();
-                                s.shutdown().await;
+                                info!("server stream drain");
+                                s.drain().await;
+                                info!("server stream end");
                             });
                         }
+                        info!("server conn shutdown");
                         conn.shutdown().await;
+                        info!("server conn shutdown end");
                     });
                     //break; // only accept for 1 request
                 }
+                info!("server listener stop");
                 l.stop().await;
-
-                sht_rx.await.unwrap();
-                info!("tokio shutdown");
-            })
+                info!("server listner stop finish");
+            });
+            info!("tokio server end.");
         });
 
         thread::sleep(Duration::from_secs(1));
@@ -184,6 +192,7 @@ mod tests {
             .build()
             .unwrap()
             .block_on(async move {
+                let client_config = client_config;
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 info!("client conn open");
                 let mut conn = QConnection::open(&q_reg);
@@ -205,9 +214,12 @@ mod tests {
                 info!("client stream receive");
                 let read = st.receive(buff.as_mut_slice()).await.unwrap();
                 info!("client stream receive read :{}", read);
-                st.shutdown().await;
+                info!("client stream drain");
+                st.drain().await;
+                info!("client conn shutdown");
                 conn.shutdown().await;
                 // shutdown server
+                tokio::time::sleep(Duration::from_millis(10)).await;
                 sht_tx.send(()).unwrap();
             });
 

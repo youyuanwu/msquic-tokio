@@ -2,6 +2,7 @@ use crate::{config::QConfiguration, info, reg::QRegistration, stream::QStream};
 use std::{
     borrow::BorrowMut,
     ffi::c_void,
+    fmt::Debug,
     io::{Error, ErrorKind},
     sync::Mutex,
 };
@@ -21,6 +22,16 @@ pub struct QConnection {
     pub _api: QApi,
     pub inner: SBox<Connection>,
     ctx: Box<QConnectionCtx>,
+}
+
+impl Debug for QConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("QConnection")
+            .field("_api", &"not displayed")
+            .field("inner", &self.inner)
+            .field("ctx", &"not displayed")
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -50,7 +61,7 @@ struct QConnectionCtx {
     conn_tx: Option<oneshot::Sender<ShutdownError>>,
     conn_rx: Option<oneshot::Receiver<ShutdownError>>,
     shtdwn_tx: Option<oneshot::Sender<()>>,
-    shtdwn_rx: Option<oneshot::Receiver<()>>,
+    is_shutdown: bool,
     state: Mutex<State>,
 }
 
@@ -101,6 +112,10 @@ extern "C" fn qconnection_callback_handler(
             if let Some(tx) = ctx.strm_tx.take() {
                 tx.blocking_send(StreamPayload::Stop(err)).unwrap();
             }
+            ctx.is_shutdown = true;
+            if let Some(tx) = ctx.shtdwn_tx.take() {
+                tx.send(()).unwrap();
+            }
         }
         // only invoked after user calls connection shutdown.
         // This can happend without peer or transport.
@@ -114,6 +129,7 @@ extern "C" fn qconnection_callback_handler(
             if let Some(tx) = ctx.strm_tx.take() {
                 tx.blocking_send(StreamPayload::Stop(err)).unwrap();
             }
+            ctx.is_shutdown = true;
             if let Some(tx) = ctx.shtdwn_tx.take() {
                 tx.send(()).unwrap();
             }
@@ -155,15 +171,14 @@ impl QConnectionCtx {
     fn new(api: &QApi, state: State) -> Self {
         let (strm_tx, strm_rx) = mpsc::channel(2);
         let (conn_tx, conn_rx) = oneshot::channel();
-        let (shdwn_tx, shdwn_rx) = oneshot::channel();
         Self {
             _api: api.clone(),
             strm_tx: Some(strm_tx),
             strm_rx,
             conn_tx: Some(conn_tx),
             conn_rx: Some(conn_rx),
-            shtdwn_tx: Some(shdwn_tx),
-            shtdwn_rx: Some(shdwn_rx),
+            shtdwn_tx: None,
+            is_shutdown: false,
             state: Mutex::new(state),
         }
     }
@@ -266,11 +281,23 @@ impl QConnection {
     }
 
     pub async fn shutdown(&mut self) {
+        let (shdwn_tx, shdwn_rx) = oneshot::channel();
         {
             let mut state = self.ctx.state.lock().unwrap();
             *state = State::Frontend;
-            self.inner.inner.shutdown(CONNECTION_SHUTDOWN_FLAG_NONE, 0); // ec
+            if self.ctx.is_shutdown {
+                info!("conn ctx.is_shutdown already");
+                return;
+            } else {
+                assert!(self.ctx.shtdwn_tx.is_none());
+                self.ctx.shtdwn_tx.replace(shdwn_tx);
+            }
         }
-        self.ctx.shtdwn_rx.take().unwrap().await.unwrap();
+        info!("conn invoke shutdown");
+        // callback maybe sync
+        self.inner.inner.shutdown(CONNECTION_SHUTDOWN_FLAG_NONE, 0); // ec
+        info!("conn wait for shutdown evnet");
+        shdwn_rx.await.unwrap();
+        info!("conn wait for shutdown evnet end");
     }
 }

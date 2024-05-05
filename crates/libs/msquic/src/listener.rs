@@ -7,7 +7,7 @@ use crate::{conn::QConnection, info};
 use c2::{
     Addr, Buffer, Configuration, Handle, Listener, ListenerEvent, LISTENER_EVENT_NEW_CONNECTION,
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 
 use crate::{config::QConfiguration, reg::QRegistration, utils::SBox, QApi};
 
@@ -19,14 +19,13 @@ pub struct QListener {
 
 struct QListenerCtx {
     _api: QApi,
-    tx: mpsc::Sender<Payload>,
-    rx: mpsc::Receiver<Payload>,
+    tx: Option<oneshot::Sender<Payload>>,
     config: Arc<SBox<Configuration>>,
     state: Mutex<State>, // cannot use tokio mutex because the callback maybe invoked sync and block tokio thread
     stop_tx: Option<oneshot::Sender<()>>,
-    stop_rx: Option<oneshot::Receiver<()>>,
 }
 
+#[derive(Debug)]
 enum Payload {
     Conn(QConnection),
     Stop,
@@ -62,15 +61,22 @@ extern "C" fn listener_handler(
                 "[{:?}] LISTENER_EVENT_NEW_CONNECTION conn=[{:?}] info={:?}",
                 listener, h, info
             );
-            ctx.tx.blocking_send(Payload::Conn(c)).unwrap();
+            if let Some(tx) = ctx.tx.take() {
+                tx.send(Payload::Conn(c)).unwrap();
+            }
         }
         QUIC_LISTENER_EVENT_STOP_COMPLETE => {
             info!("[{:?}] QUIC_LISTENER_EVENT_STOP_COMPLETE", listener);
             assert_eq!(*state, State::StopRequested);
             *state = State::Stopped;
             // stop the acceptor
-            ctx.tx.blocking_send(Payload::Stop).unwrap();
+            if let Some(tx) = ctx.tx.take() {
+                info!("[{:?}] QUIC_LISTENER_EVENT_STOP_COMPLETE tx send", listener);
+                // front end accept might already be stopped.
+                let _ = tx.send(Payload::Stop);
+            }
             // stop the stop action
+            info!("[{:?}] QUIC_LISTENER_EVENT_STOP_COMPLETE stop_tx", listener);
             ctx.stop_tx.take().unwrap().send(()).unwrap();
         }
         _ => {
@@ -84,16 +90,12 @@ extern "C" fn listener_handler(
 impl QListener {
     // server open listener
     pub fn open(registration: &QRegistration, configuration: &QConfiguration) -> Self {
-        let (tx, rx) = mpsc::channel(2);
-        let (stop_tx, stop_rx) = oneshot::channel();
         let context = Box::new(QListenerCtx {
             _api: registration.api.clone(),
-            tx,
-            rx,
+            tx: None,
             config: configuration.inner.clone(),
             state: Mutex::new(State::Idle),
-            stop_tx: Some(stop_tx),
-            stop_rx: Some(stop_rx),
+            stop_tx: None,
         });
         let l = Listener::new(
             &registration.inner.inner,
@@ -115,6 +117,7 @@ impl QListener {
     }
 
     pub async fn accept(&mut self) -> Option<QConnection> {
+        let (tx, rx) = oneshot::channel();
         let fu;
         {
             let state = self.ctx.state.lock().unwrap();
@@ -123,7 +126,9 @@ impl QListener {
             }
             // must be started
             assert_ne!(*state, State::Idle);
-            fu = self.ctx.rx.recv();
+            assert!(self.ctx.tx.is_none());
+            self.ctx.tx.replace(tx);
+            fu = rx;
         }
         let payload = fu.await.unwrap();
         match payload {
@@ -133,14 +138,21 @@ impl QListener {
     }
 
     pub async fn stop(&mut self) {
+        let (stop_tx, stop_rx) = oneshot::channel();
         {
             let mut state = self.ctx.state.lock().unwrap();
             assert_eq!(*state, State::Started);
             *state = State::StopRequested;
-            self.inner.inner.stop();
+            assert!(self.ctx.stop_tx.is_none());
+            self.ctx.stop_tx.replace(stop_tx);
         }
+        // callback may be invoked in the same thread.
+        info!("listner stop requested.");
+        self.inner.inner.stop();
+        info!("wait for stop_rx signal.");
         // wait for drain.
-        self.ctx.stop_rx.take().unwrap().await.unwrap();
+        stop_rx.await.unwrap();
+        info!("wait for stop_rx signal ok.");
     }
 }
 
