@@ -36,6 +36,7 @@ enum ShutdownError {
     ShutdownComplete,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum ReceivePayload {
     Success(Vec<QVecBuffer>),

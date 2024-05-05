@@ -34,6 +34,7 @@ impl Debug for QConnection {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 enum ShutdownError {
     Ok,                    // no error
@@ -42,6 +43,7 @@ enum ShutdownError {
     Complete,
 }
 
+#[allow(dead_code)]
 enum StreamPayload {
     Stream(QStream),
     Stop(ShutdownError),

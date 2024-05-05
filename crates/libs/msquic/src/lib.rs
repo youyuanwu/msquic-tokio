@@ -34,7 +34,7 @@ impl Default for QApi {
 #[cfg(test)]
 mod tests {
 
-    use std::{thread, time::Duration};
+    use std::{process::Command, thread, time::Duration};
 
     use c2::{
         Addr, CertificateHash, CertificateUnion, CredentialConfig, RegistrationConfig, Settings,
@@ -56,10 +56,28 @@ mod tests {
 
     use super::info;
 
+    fn get_test_cert_hash() -> String {
+        let output = Command::new("pwsh.exe")
+            .args(["-Command", "Get-ChildItem Cert:\\CurrentUser\\My | Where-Object -Property FriendlyName -EQ -Value MsQuic-Test | Select-Object -ExpandProperty Thumbprint -First 1"]).
+            output().expect("Failed to execute command");
+        assert!(output.status.success());
+        let mut s = String::from_utf8(output.stdout).unwrap();
+        if s.ends_with('\n') {
+            s.pop();
+            if s.ends_with('\r') {
+                s.pop();
+            }
+        };
+        s
+    }
+
     #[test]
     fn basic_test() {
         tracing_subscriber::fmt().init();
         info!("Test start");
+        let cert_hash = get_test_cert_hash();
+        info!("Using cert_hash: [{cert_hash}]");
+
         let api = QApi::default();
 
         let config = RegistrationConfig {
@@ -77,9 +95,8 @@ mod tests {
 
         let q_config = QConfiguration::new(&q_reg, alpn.as_buffers(), &settings);
         {
-            let hash = "80CAB3DEDAF26E58F298ACB821282415378E6D65";
             let mut hash_array: [u8; 20] = [0; 20];
-            hex::decode_to_slice(hash, &mut hash_array).expect("Decoding failed");
+            hex::decode_to_slice(cert_hash.as_bytes(), &mut hash_array).expect("Decoding failed");
 
             let mut cred_config = CredentialConfig::new_client();
             cred_config.cred_type = CREDENTIAL_TYPE_CERTIFICATE_HASH;
