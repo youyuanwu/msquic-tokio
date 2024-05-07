@@ -12,6 +12,7 @@ pub mod conn;
 pub mod listener;
 pub mod reg;
 pub mod stream;
+pub mod sync;
 mod utils;
 
 // Some useful defs

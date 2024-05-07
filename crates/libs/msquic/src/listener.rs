@@ -3,11 +3,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::{conn::QConnection, info};
+use crate::{
+    conn::QConnection,
+    info,
+    sync::{QQueue, QResetChannel, QSignal},
+};
 use c2::{
     Addr, Buffer, Configuration, Handle, Listener, ListenerEvent, LISTENER_EVENT_NEW_CONNECTION,
 };
-use tokio::sync::oneshot;
 
 use crate::{config::QConfiguration, reg::QRegistration, utils::SBox, QApi};
 
@@ -19,17 +22,16 @@ pub struct QListener {
 
 struct QListenerCtx {
     _api: QApi,
-    tx: Option<oneshot::Sender<Payload>>,
+    ch: QQueue<QConnection>,
     config: Arc<SBox<Configuration>>,
     state: Mutex<State>, // cannot use tokio mutex because the callback maybe invoked sync and block tokio thread
-    stop_tx: Option<oneshot::Sender<()>>,
+    sig_stop: QSignal,
 }
 
-#[derive(Debug)]
-enum Payload {
-    Conn(QConnection),
-    Stop,
-}
+// #[derive(Debug)]
+// enum Payload {
+//     Conn(QConnection),
+// }
 
 #[derive(PartialEq, Debug)]
 enum State {
@@ -61,23 +63,17 @@ extern "C" fn listener_handler(
                 "[{:?}] LISTENER_EVENT_NEW_CONNECTION conn=[{:?}] info={:?}",
                 listener, h, info
             );
-            if let Some(tx) = ctx.tx.take() {
-                tx.send(Payload::Conn(c)).unwrap();
-            }
+            ctx.ch.insert(c);
         }
         QUIC_LISTENER_EVENT_STOP_COMPLETE => {
             info!("[{:?}] QUIC_LISTENER_EVENT_STOP_COMPLETE", listener);
             assert_eq!(*state, State::StopRequested);
             *state = State::Stopped;
             // stop the acceptor
-            if let Some(tx) = ctx.tx.take() {
-                info!("[{:?}] QUIC_LISTENER_EVENT_STOP_COMPLETE tx send", listener);
-                // front end accept might already be stopped.
-                let _ = tx.send(Payload::Stop);
-            }
+            ctx.ch.close(0);
             // stop the stop action
             info!("[{:?}] QUIC_LISTENER_EVENT_STOP_COMPLETE stop_tx", listener);
-            ctx.stop_tx.take().unwrap().send(()).unwrap();
+            ctx.sig_stop.set(());
         }
         _ => {
             unreachable!()
@@ -92,10 +88,10 @@ impl QListener {
     pub fn open(registration: &QRegistration, configuration: &QConfiguration) -> Self {
         let context = Box::new(QListenerCtx {
             _api: registration.api.clone(),
-            tx: None,
+            ch: QQueue::new(),
             config: configuration.inner.clone(),
             state: Mutex::new(State::Idle),
-            stop_tx: None,
+            sig_stop: QResetChannel::new(),
         });
         let l = Listener::new(
             &registration.inner.inner,
@@ -117,8 +113,7 @@ impl QListener {
     }
 
     pub async fn accept(&mut self) -> Option<QConnection> {
-        let (tx, rx) = oneshot::channel();
-        let fu;
+        let rx;
         {
             let state = self.ctx.state.lock().unwrap();
             if *state == State::Stopped {
@@ -126,32 +121,29 @@ impl QListener {
             }
             // must be started
             assert_ne!(*state, State::Idle);
-            assert!(self.ctx.tx.is_none());
-            self.ctx.tx.replace(tx);
-            fu = rx;
+            rx = self.ctx.ch.pop();
         }
-        let payload = fu.await.unwrap();
-        match payload {
-            Payload::Conn(c) => Some(c),
-            Payload::Stop => None,
+        let res = rx.await;
+        match res {
+            Ok(c) => Some(c),
+            Err(_) => None,
         }
     }
 
     pub async fn stop(&mut self) {
-        let (stop_tx, stop_rx) = oneshot::channel();
+        let rx;
         {
             let mut state = self.ctx.state.lock().unwrap();
             assert_eq!(*state, State::Started);
             *state = State::StopRequested;
-            assert!(self.ctx.stop_tx.is_none());
-            self.ctx.stop_tx.replace(stop_tx);
+            rx = self.ctx.sig_stop.reset();
         }
         // callback may be invoked in the same thread.
         info!("listner stop requested.");
         self.inner.inner.stop();
         info!("wait for stop_rx signal.");
         // wait for drain.
-        stop_rx.await.unwrap();
+        rx.await;
         info!("wait for stop_rx signal ok.");
     }
 }
