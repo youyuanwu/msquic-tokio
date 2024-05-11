@@ -210,6 +210,7 @@ dependencies = [
 name = "msquic"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "c2",
  "hex",
  "tokio",

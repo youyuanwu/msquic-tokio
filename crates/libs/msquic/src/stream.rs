@@ -6,13 +6,14 @@ use std::{
 };
 
 use crate::{
-    buffer::{QBuffRef, QBufferVec, QOwnedBuffer, QVecBuffer},
+    buffer::{QBufWrap, QBytesMut},
     conn::QConnection,
     info,
     sync::{QQueue, QResetChannel, QSignal},
     utils::SBox,
     QApi,
 };
+use bytes::Buf;
 use c2::{
     Buffer, Handle, SendFlags, Stream, StreamEvent, StreamOpenFlags, StreamStartFlags,
     STREAM_EVENT_PEER_RECEIVE_ABORTED, STREAM_EVENT_PEER_SEND_ABORTED,
@@ -41,7 +42,7 @@ enum StartPayload {
 
 struct QStreamCtx {
     start_sig: QResetChannel<StartPayload>,
-    receive_ch: QQueue<Vec<QVecBuffer>>,
+    receive_ch: QQueue<QBytesMut>,
     send_ch: QResetChannel<SentPayload>,
     send_shtdwn_sig: QSignal,
     drain_sig: QSignal,
@@ -77,10 +78,7 @@ impl QStreamCtx {
     }
     fn on_receive(&mut self, buffs: &[Buffer]) {
         // send to frontend
-        let v = buffs
-            .iter()
-            .map(|b| QVecBuffer::from(&QBuffRef::from(b)))
-            .collect::<Vec<_>>();
+        let v = QBytesMut::from_buffs(buffs);
         self.receive_ch.insert(v);
     }
     fn on_peer_send_shutdown(&mut self) {
@@ -221,7 +219,7 @@ impl QStream {
 
     // receive into this buff
     // return num of bytes wrote.
-    pub async fn receive(&mut self, buff: &mut [u8]) -> Result<u32, Error> {
+    pub async fn receive(&mut self) -> Result<impl Buf, Error> {
         let rx;
         {
             rx = self.ctx.lock().unwrap().receive_ch.pop();
@@ -230,30 +228,7 @@ impl QStream {
         let v = rx
             .await
             .map_err(|e: u32| Error::from_raw_os_error(e.try_into().unwrap()))?;
-        let copied = QStream::copy_vec(&v, buff);
-        // resume
-        // self.receive_complete(copied as u64);
-        Ok(copied)
-    }
-
-    fn copy_vec(src: &Vec<QVecBuffer>, buff: &mut [u8]) -> u32 {
-        // chain all buff into a single iter
-        let mut it = buff.iter_mut();
-        let mut copied = 0_u32;
-        for b in src {
-            let buf_ref = b.as_buff_ref();
-            let mut src_iter = buf_ref.data.iter();
-            loop {
-                let dst = it.next();
-                let src = src_iter.next();
-                if dst.is_none() || src.is_none() {
-                    break;
-                }
-                *dst.unwrap() = *src.unwrap();
-                copied += 1;
-            }
-        }
-        copied
+        Ok(v.0)
     }
 
     // fn receive_complete(&self, len: u64) {
@@ -261,13 +236,12 @@ impl QStream {
     //     let _ = self.inner.inner.receive_complete(len);
     // }
 
-    pub async fn send(&mut self, buffers: &[QVecBuffer], flags: SendFlags) -> Result<(), Error> {
+    pub async fn send(&mut self, buffers: impl Buf, flags: SendFlags) -> Result<(), Error> {
+        let b = QBufWrap::new(buffers);
         let rx;
         {
+            let bb = b.as_buffs();
             rx = self.ctx.lock().unwrap().send_ch.reset();
-
-            let b = QBufferVec::from(buffers);
-            let bb = b.as_buffers();
             self.inner
                 .inner
                 .send(&bb[0], bb.len() as u32, flags, std::ptr::null());

@@ -37,6 +37,7 @@ mod tests {
 
     use std::{process::Command, thread, time::Duration};
 
+    use bytes::Bytes;
     use c2::{
         Addr, CertificateHash, CertificateUnion, CredentialConfig, RegistrationConfig, Settings,
         ADDRESS_FAMILY_UNSPEC, CREDENTIAL_FLAG_CLIENT, CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION,
@@ -46,7 +47,7 @@ mod tests {
     use tokio::sync::oneshot;
 
     use crate::{
-        buffer::{QBufferVec, QVecBuffer},
+        buffer::{debug_buf_to_string, QBufferVec, QVecBuffer},
         config::QConfiguration,
         conn::QConnection,
         listener::QListener,
@@ -165,14 +166,14 @@ mod tests {
                             rth.spawn(async move {
                                 info!("server accepted stream");
                                 let mut s = s.unwrap();
-                                let mut buff = [0_u8; 99];
                                 info!("server stream receive");
-                                let read = s.receive(buff.as_mut_slice()).await.unwrap();
-                                info!("server received len {}", read);
-                                assert_eq!(read as usize, "world".len());
-                                let args: [QVecBuffer; 1] = [QVecBuffer::from("hello world")];
+                                let read = s.receive().await.unwrap();
+                                let payload = debug_buf_to_string(read);
+                                info!("server received len {}", payload.len());
+                                assert_eq!(payload, "hello");
+                                let args = Bytes::from("hello world");
                                 info!("server stream send");
-                                s.send(args.as_slice(), SEND_FLAG_FIN).await.unwrap();
+                                s.send(args, SEND_FLAG_FIN).await.unwrap();
                                 info!("server stream drain");
                                 s.drain().await;
                                 info!("server stream end");
@@ -182,7 +183,6 @@ mod tests {
                         conn.shutdown().await;
                         info!("server conn shutdown end");
                     });
-                    //break; // only accept for 1 request
                 }
                 info!("server listener stop");
                 l.stop().await;
@@ -217,31 +217,26 @@ mod tests {
                 info!("client conn start");
                 conn.start(&client_config, "localhost", 4567).await.unwrap();
 
-                // thread::sleep(Duration::from_secs(5));
-                //
                 info!("client stream open");
                 let mut st = QStream::open(&conn, STREAM_OPEN_FLAG_NONE);
                 info!("client stream start");
                 st.start(STREAM_START_FLAG_NONE).await.unwrap();
-                let args: [QVecBuffer; 1] = [QVecBuffer::from("hello")];
+                let args = Bytes::from("hello");
                 info!("client stream send");
-                st.send(args.as_slice(), SEND_FLAG_FIN).await.unwrap();
+                st.send(args, SEND_FLAG_FIN).await.unwrap();
 
-                tokio::time::sleep(Duration::from_millis(1)).await;
-                let mut buff = [0_u8; 99];
                 info!("client stream receive");
-                let read = st.receive(buff.as_mut_slice()).await.unwrap();
-                info!("client stream receive read :{}", read);
+                let read = st.receive().await.unwrap();
+                let payload = debug_buf_to_string(read);
+                info!("client stream receive read :{}", payload.len());
+                assert_eq!(payload, "hello world");
                 info!("client stream drain");
                 st.drain().await;
                 info!("client conn shutdown");
                 conn.shutdown().await;
                 // shutdown server
-                tokio::time::sleep(Duration::from_millis(10)).await;
                 sht_tx.send(()).unwrap();
             });
-
-        thread::sleep(Duration::from_secs(5));
         th.join().unwrap();
     }
 }

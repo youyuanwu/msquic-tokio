@@ -11,6 +11,7 @@ edition = "2021"
 # log = "0.4"
 tokio = {version = "1", features = ["sync"]}
 tracing = { version = "0.1.40", features = ["log"] }
+bytes = "*"
 
 [dev-dependencies]
 # env_logger = "0.10.1"
