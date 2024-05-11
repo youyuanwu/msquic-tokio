@@ -98,7 +98,7 @@ impl QListener {
         }
     }
 
-    pub async fn start(&self, alpn: &[Buffer], local_address: &Addr) {
+    pub fn start(&self, alpn: &[Buffer], local_address: &Addr) {
         {
             let mut lk = self.ctx.lock().unwrap();
             assert_eq!(lk.state, State::Idle);

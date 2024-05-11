@@ -155,13 +155,9 @@ impl<T> QQueue<T> {
     pub fn close(&mut self, err: QError) {
         self.is_closed = true;
         self.ec = err;
-        if self.v.is_empty() {
-            // if there is wait give out error
-            if self.channel.can_set() {
-                self.channel.set(Err(self.ec));
-            }
-        } else {
-            assert!(self.channel.can_set(), "v is empty and channel is waiting");
+        // if there is wait give out error
+        if self.channel.can_set() {
+            self.channel.set(Err(self.ec));
         }
     }
 }

@@ -4,6 +4,7 @@ use c2::{Buffer, Configuration, CredentialConfig, Settings};
 
 use crate::{reg::QRegistration, utils::SBox, QApi};
 
+#[derive(Clone)]
 pub struct QConfiguration {
     pub _api: QApi,
     pub inner: Arc<SBox<Configuration>>,

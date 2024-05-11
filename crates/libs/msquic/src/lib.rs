@@ -127,7 +127,7 @@ mod tests {
                     l = QListener::open(&q_req_copy, &q_config);
                     info!("Start listener.");
                     let alpn = QBufferVec::from(args.as_slice());
-                    l.start(alpn.as_buffers(), &local_address).await;
+                    l.start(alpn.as_buffers(), &local_address);
                 }
                 let mut i = 0;
                 loop {
@@ -151,7 +151,7 @@ mod tests {
                         let mut conn = conn.unwrap();
                         info!("server accepted conn id={}", conn_id);
                         info!("server conn connect");
-                        conn.connect().await.unwrap();
+                        conn.proceed().await.unwrap();
                         tokio::time::sleep(Duration::from_millis(1)).await;
                         conn.send_resumption_ticket(SEND_RESUMPTION_FLAG_NONE);
                         tokio::time::sleep(Duration::from_millis(1)).await;
