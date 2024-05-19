@@ -144,22 +144,21 @@ impl From<&SBuffer> for Buffer {
     }
 }
 
-pub struct QBufWrap<B: Buf> {
-    _inner: Box<B>, // mem owner
+pub struct QBufWrap {
+    _inner: Box<dyn Buf>, // mem owner
     v: Vec<Buffer>,
 }
 
-unsafe impl<B: Buf> Send for QBufWrap<B> {}
+unsafe impl Send for QBufWrap {}
 
-impl<B: Buf> QBufWrap<B> {
-    pub fn new(buf: B) -> Self {
+impl QBufWrap {
+    pub fn new(mut buf: Box<dyn Buf>) -> Self {
         // make on heap so that no ptr move.
-        let mut inner = Box::new(buf);
-        let v = Self::convert_buf(&mut inner);
-        Self { _inner: inner, v }
+        let v = Self::convert_buf(&mut buf);
+        Self { _inner: buf, v }
     }
 
-    fn convert_buf(b: &mut impl Buf) -> Vec<Buffer> {
+    fn convert_buf(b: &mut Box<dyn Buf>) -> Vec<Buffer> {
         let mut v = Vec::new();
         // change buf to vecs
         while b.has_remaining() {
@@ -188,6 +187,7 @@ impl QBytesMut {
         let mut res = BytesMut::new();
         b.iter().for_each(|i| {
             let s = unsafe { slice::from_raw_parts(i.buffer, i.length.try_into().unwrap()) };
+            res.reserve(s.len());
             res.put_slice(s);
         });
         Self(res)
@@ -195,25 +195,28 @@ impl QBytesMut {
 }
 
 pub fn debug_buf_to_string(mut b: impl Buf) -> String {
-    let cp = b.copy_to_bytes(b.remaining());
-    String::from_utf8_lossy(&cp).into_owned()
+    let mut dst = vec![0; b.remaining()];
+    b.copy_to_slice(&mut dst[..]);
+    // let cp = b.copy_to_bytes(b.remaining());
+    String::from_utf8_lossy(&dst).into_owned()
+}
+
+pub fn debug_raw_buf_to_string(b: Buffer) -> String {
+    let s = String::from_utf8_lossy(unsafe {
+        slice::from_raw_parts(b.buffer, b.length.try_into().unwrap())
+    });
+    s.into_owned()
 }
 
 #[cfg(test)]
 mod test {
-    use core::slice;
 
     use bytes::{BufMut, Bytes, BytesMut};
     use c2::Buffer;
 
-    use super::{QBufWrap, QBuffRef, QBufferVec, QVecBuffer};
+    use crate::buffer::debug_raw_buf_to_string;
 
-    fn buf_to_string(b: Buffer) -> String {
-        let s = String::from_utf8_lossy(unsafe {
-            slice::from_raw_parts(b.buffer, b.length.try_into().unwrap())
-        });
-        s.into_owned()
-    }
+    use super::{debug_buf_to_string, QBufWrap, QBuffRef, QBufferVec, QBytesMut, QVecBuffer};
 
     #[test]
     fn test_vec_buffer() {
@@ -239,11 +242,11 @@ mod test {
     #[test]
     fn test_buf() {
         let b = Bytes::from("mydata");
-        let wrap = QBufWrap::new(b);
+        let wrap = QBufWrap::new(Box::new(b));
         let v = wrap.as_buffs();
         assert_eq!(v.len(), 1);
         let b1 = v[0];
-        let s = buf_to_string(b1);
+        let s = debug_raw_buf_to_string(b1);
         assert_eq!(s, "mydata");
     }
 
@@ -252,11 +255,21 @@ mod test {
         let mut b = BytesMut::with_capacity(5);
         b.put(&b"hello"[..]);
         b.put(&b"world"[..]); // this will grow
-        let wrap = QBufWrap::new(b);
+        let wrap = QBufWrap::new(Box::new(b));
         let v = wrap.as_buffs();
         assert_eq!(v.len(), 1);
         let b1 = v[0];
-        let s = buf_to_string(b1);
+        let s = debug_raw_buf_to_string(b1);
+        assert_eq!(s, "helloworld");
+    }
+
+    #[test]
+    fn test_buf2str() {
+        let args: [QVecBuffer; 2] = [QVecBuffer::from("hello"), QVecBuffer::from("world")];
+        let buffer_vec = QBufferVec::from(args.as_slice());
+        let bm = QBytesMut::from_buffs(buffer_vec.as_buffers());
+        std::mem::drop(args);
+        let s = debug_buf_to_string(bm.0);
         assert_eq!(s, "helloworld");
     }
 }

@@ -1,15 +1,17 @@
 use std::{
     ffi::c_void,
+    future::poll_fn,
     io::{Error, ErrorKind},
     slice,
-    sync::Mutex,
+    sync::{Arc, Mutex, MutexGuard},
+    task::Poll,
 };
 
 use crate::{
-    buffer::{QBufWrap, QBytesMut},
+    buffer::{debug_buf_to_string, debug_raw_buf_to_string, QBufWrap, QBytesMut},
     conn::QConnection,
     info,
-    sync::{QQueue, QResetChannel, QSignal},
+    sync::{QSignal, QWakableQueue, QWakableSig},
     utils::SBox,
     QApi,
 };
@@ -19,14 +21,14 @@ use c2::{
     STREAM_EVENT_PEER_RECEIVE_ABORTED, STREAM_EVENT_PEER_SEND_ABORTED,
     STREAM_EVENT_PEER_SEND_SHUTDOWN, STREAM_EVENT_RECEIVE, STREAM_EVENT_SEND_COMPLETE,
     STREAM_EVENT_SEND_SHUTDOWN_COMPLETE, STREAM_EVENT_SHUTDOWN_COMPLETE,
-    STREAM_EVENT_START_COMPLETE, STREAM_SHUTDOWN_FLAG_NONE,
+    STREAM_EVENT_START_COMPLETE, STREAM_SHUTDOWN_FLAG_GRACEFUL, STREAM_SHUTDOWN_FLAG_NONE,
 };
 
-// #[derive(Debug)]
+#[derive(Clone)]
 pub struct QStream {
     _api: QApi,
-    inner: SBox<Stream>,
-    ctx: Box<Mutex<QStreamCtx>>,
+    inner: Arc<SBox<Stream>>, // arc needed for copy
+    ctx: Arc<Mutex<QStreamCtx>>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,30 +43,30 @@ enum StartPayload {
 }
 
 struct QStreamCtx {
-    start_sig: QResetChannel<StartPayload>,
-    receive_ch: QQueue<QBytesMut>,
-    send_ch: QResetChannel<SentPayload>,
+    start_sig: QWakableQueue<StartPayload>,
+    receive_ch: QWakableQueue<QBytesMut>,
+    send_sig: QWakableSig<SentPayload>,
     send_shtdwn_sig: QSignal,
     drain_sig: QSignal,
     is_drained: bool,
+    pending_buf: Option<QBufWrap>, // because msquic copies buffers in background we need to hold the buffer temporarily
 }
 
 impl QStreamCtx {
     fn new() -> Self {
         Self {
-            start_sig: QResetChannel::new(),
-            receive_ch: QQueue::new(),
-            send_ch: QResetChannel::new(),
+            start_sig: QWakableQueue::default(),
+            receive_ch: QWakableQueue::default(),
+            send_sig: QWakableSig::default(),
             send_shtdwn_sig: QSignal::new(),
             drain_sig: QSignal::new(),
             is_drained: false,
+            pending_buf: None,
         }
     }
 
     fn on_start_complete(&mut self) {
-        if self.start_sig.can_set() {
-            self.start_sig.set(StartPayload::Success);
-        }
+        self.start_sig.insert(StartPayload::Success);
     }
     fn on_send_complete(&mut self, cancelled: bool) {
         let payload = if cancelled {
@@ -72,23 +74,32 @@ impl QStreamCtx {
         } else {
             SentPayload::Success
         };
-        if self.send_ch.can_set() {
-            self.send_ch.set(payload);
-        }
+        let prev = self.pending_buf.take(); // release buffer
+        assert!(prev.is_some());
+        self.send_sig.set(payload);
     }
     fn on_receive(&mut self, buffs: &[Buffer]) {
         // send to frontend
         let v = QBytesMut::from_buffs(buffs);
+        let s = debug_buf_to_string(v.0.clone());
+        let original = debug_raw_buf_to_string(buffs[0]);
+        info!(
+            "debug: receive bytes: {} len:{}, original {}, len: {}",
+            s,
+            s.len(),
+            original,
+            original.len()
+        );
         self.receive_ch.insert(v);
     }
     fn on_peer_send_shutdown(&mut self) {
         // peer can shutdown their direction. But we should receive what is pending.
         // Peer will no longer send new stuff, so the receive can be dropped.
         // if frontend is waiting stop it.
-        self.receive_ch.close(0);
+        self.receive_ch.close();
     }
     fn on_peer_send_abort(&mut self, _ec: u64) {
-        self.receive_ch.close(0);
+        self.receive_ch.close();
     }
     fn on_send_shutdown_complete(&mut self) {
         if self.send_shtdwn_sig.can_set() {
@@ -97,7 +108,7 @@ impl QStreamCtx {
     }
     fn on_shutdown_complete(&mut self) {
         // close all channels
-        self.receive_ch.close(0);
+        self.receive_ch.close();
         // drain signal
         self.is_drained = true;
         if self.drain_sig.can_set() {
@@ -131,11 +142,16 @@ extern "C" fn qstream_handler_callback(
             ctx.on_send_complete(raw.canceled);
         }
         STREAM_EVENT_RECEIVE => {
-            info!("[{:?}] QUIC_STREAM_EVENT_RECEIVE", stream);
             let raw = unsafe { event.payload.receive };
             let count = raw.buffer_count;
             let curr = raw.buffer;
             let buffs = unsafe { slice::from_raw_parts(curr, count.try_into().unwrap()) };
+            info!(
+                "[{:?}] QUIC_STREAM_EVENT_RECEIVE: buffer count {}, len {}",
+                stream,
+                buffs.len(),
+                buffs[0].length
+            );
             ctx.on_receive(buffs);
         }
         STREAM_EVENT_PEER_SEND_SHUTDOWN => {
@@ -172,7 +188,7 @@ extern "C" fn qstream_handler_callback(
 impl QStream {
     pub fn attach(api: QApi, h: Handle) -> Self {
         let s = Stream::from_parts(h, &api.inner.inner);
-        let ctx = Box::new(Mutex::new(QStreamCtx::new()));
+        let ctx = Arc::new(Mutex::new(QStreamCtx::new()));
         s.set_callback_handler(
             qstream_handler_callback,
             &*ctx as *const Mutex<QStreamCtx> as *const c_void,
@@ -180,7 +196,7 @@ impl QStream {
 
         Self {
             _api: api,
-            inner: SBox::new(s),
+            inner: Arc::new(SBox::new(s)),
             ctx,
         }
     }
@@ -188,7 +204,7 @@ impl QStream {
     // open client stream
     pub fn open(connection: &QConnection, flags: StreamOpenFlags) -> Self {
         let s = Stream::new(&connection._api.inner.inner);
-        let ctx = Box::new(Mutex::new(QStreamCtx::new()));
+        let ctx = Arc::new(Mutex::new(QStreamCtx::new()));
         s.open(
             &connection.inner.inner,
             flags,
@@ -198,61 +214,116 @@ impl QStream {
         Self {
             _api: connection._api.clone(),
             ctx,
-            inner: SBox::new(s),
+            inner: Arc::new(SBox::new(s)),
+        }
+    }
+
+    pub fn start_only(&self, flags: StreamStartFlags) {
+        self.inner.inner.start(flags);
+    }
+
+    pub fn poll_start(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Error>> {
+        let p = self.ctx.lock().unwrap().start_sig.poll(cx);
+        match p {
+            std::task::Poll::Ready(op) => match op {
+                Some(_) => Poll::Ready(Ok(())),
+                None => Poll::Ready(Err(Error::from(ErrorKind::BrokenPipe))),
+            },
+            std::task::Poll::Pending => Poll::Pending,
         }
     }
 
     // start stream for client
     pub async fn start(&mut self, flags: StreamStartFlags) -> Result<(), Error> {
         // regardless of start success of fail, there is a QUIC_STREAM_EVENT_START_COMPLETE callback.
-        let rx;
-        {
-            // prepare the channel.
-            rx = self.ctx.lock().unwrap().start_sig.reset();
-            self.inner.inner.start(flags);
-        }
-        // wait for backend
-        match rx.await {
-            StartPayload::Success => Ok(()),
+        self.start_only(flags);
+        let fu = poll_fn(|cx| self.poll_start(cx));
+        fu.await
+    }
+
+    pub fn poll_receive(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<impl Buf, Error>> {
+        let p = self.ctx.lock().unwrap().receive_ch.poll(cx);
+        match p {
+            Poll::Ready(op) => match op {
+                Some(b) => Poll::Ready(Ok(b.0)),
+                None => Poll::Ready(Err(Error::from(ErrorKind::BrokenPipe))),
+            },
+            Poll::Pending => Poll::Pending,
         }
     }
 
     // receive into this buff
     // return num of bytes wrote.
     pub async fn receive(&mut self) -> Result<impl Buf, Error> {
-        let rx;
-        {
-            rx = self.ctx.lock().unwrap().receive_ch.pop();
-        }
-
-        let v = rx
-            .await
-            .map_err(|e: u32| Error::from_raw_os_error(e.try_into().unwrap()))?;
-        Ok(v.0)
+        let fu = poll_fn(|cx| self.poll_receive(cx));
+        fu.await
     }
 
     // fn receive_complete(&self, len: u64) {
     //     // TODO: handle error
     //     let _ = self.inner.inner.receive_complete(len);
     // }
+    pub fn send_only(&mut self, buffers: impl Buf + 'static, flags: SendFlags) {
+        let mut lk = self.ctx.lock().unwrap();
+        lk.send_sig.set_frontend_pending();
+        let b = QBufWrap::new(Box::new(buffers));
+        // hold on the buffer until callback.
+        let prev = lk.pending_buf.replace(b);
+        assert!(prev.is_none());
+        let bb = lk.pending_buf.as_ref().unwrap().as_buffs();
+        self.inner
+            .inner
+            .send(&bb[0], bb.len() as u32, flags, std::ptr::null());
+    }
 
-    pub async fn send(&mut self, buffers: impl Buf, flags: SendFlags) -> Result<(), Error> {
-        let b = QBufWrap::new(buffers);
-        let rx;
-        {
-            let bb = b.as_buffs();
-            rx = self.ctx.lock().unwrap().send_ch.reset();
-            self.inner
-                .inner
-                .send(&bb[0], bb.len() as u32, flags, std::ptr::null());
-        }
+    pub fn poll_send(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Result<(), Error>> {
+        let mut p = self.ctx.lock().unwrap();
+        Self::poll_send_inner(&mut p, cx)
+    }
 
-        // wait backend
-        let res = rx.await;
-        match res {
-            SentPayload::Success => Ok(()),
-            SentPayload::Canceled => Err(Error::from(ErrorKind::ConnectionAborted)),
+    fn poll_send_inner(
+        lk: &mut MutexGuard<QStreamCtx>,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Result<(), Error>> {
+        let p = lk.send_sig.poll(cx);
+        match p {
+            std::task::Poll::Ready(op) => match op {
+                Some(e) => match e {
+                    SentPayload::Success => Poll::Ready(Ok(())),
+                    SentPayload::Canceled => {
+                        Poll::Ready(Err(Error::from(ErrorKind::ConnectionAborted)))
+                    }
+                },
+                None => Poll::Ready(Err(Error::from(ErrorKind::BrokenPipe))),
+            },
+            std::task::Poll::Pending => Poll::Pending,
         }
+    }
+
+    pub async fn send(
+        &mut self,
+        buffers: impl Buf + 'static,
+        flags: SendFlags,
+    ) -> Result<(), Error> {
+        self.send_only(buffers, flags);
+        let fu = poll_fn(|cx| self.poll_send(cx));
+        fu.await
+    }
+
+    // poll if send is ready for more data
+    pub fn poll_ready_send(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Result<(), Error>> {
+        let mut lk = self.ctx.lock().unwrap();
+        // If frontend pending is not yet cleared from backend, we set waker in backend.
+        if !lk.send_sig.is_frontend_pending() {
+            return Poll::Ready(Ok(()));
+        }
+        Self::poll_send_inner(&mut lk, cx)
     }
 
     // send shutdown signal to peer.
@@ -264,6 +335,14 @@ impl QStream {
             self.inner.inner.shutdown(STREAM_SHUTDOWN_FLAG_NONE, 0);
         }
         rx.await;
+    }
+
+    // this is for h3 where the interface does not wait
+    // We will ignore callback.
+    pub fn stop_sending(&self, error_code: u64) {
+        self.inner
+            .inner
+            .shutdown(STREAM_SHUTDOWN_FLAG_GRACEFUL, error_code)
     }
 
     // wait for the complete shutdown event. before close handle.

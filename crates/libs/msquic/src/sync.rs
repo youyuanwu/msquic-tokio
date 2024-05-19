@@ -2,7 +2,8 @@ use std::{
     collections::LinkedList,
     future::Future,
     pin::Pin,
-    task::{Context, Poll},
+    sync::{Arc, Mutex},
+    task::{Context, Poll, Waker},
 };
 
 use tokio::sync::oneshot::{self, Receiver};
@@ -159,5 +160,250 @@ impl<T> QQueue<T> {
         if self.channel.can_set() {
             self.channel.set(Err(self.ec));
         }
+    }
+}
+
+#[derive(Default)]
+struct QWakableQueueState<T> {
+    data: LinkedList<T>,
+    waker: Option<Waker>,
+    is_closed: bool,
+}
+
+#[derive(Clone)]
+pub struct QWakableQueue<T> {
+    state: Arc<Mutex<QWakableQueueState<T>>>,
+}
+
+impl<T> Default for QWakableQueue<T> {
+    fn default() -> Self {
+        let state = QWakableQueueState {
+            data: LinkedList::new(),
+            waker: None,
+            is_closed: false,
+        };
+        Self {
+            state: Arc::new(Mutex::new(state)),
+        }
+    }
+}
+
+impl<T> QWakableQueue<T> {
+    // insert the data and wake
+    pub fn insert(&mut self, data: T) {
+        let mut lk = self.state.lock().unwrap();
+        if lk.is_closed {
+            panic!("set after close")
+        }
+        lk.data.push_back(data);
+        if lk.waker.is_some() {
+            lk.waker.take().unwrap().wake();
+        }
+    }
+
+    // if polled none the res is cancelled and will not be delivered.
+    // only one poll can happen at a time.
+    pub fn poll(&mut self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<T>> {
+        let mut lk = self.state.lock().unwrap();
+        match lk.data.pop_front() {
+            Some(d) => Poll::Ready(Some(d)),
+            None => {
+                if lk.is_closed {
+                    Poll::Ready(None)
+                } else {
+                    // register waker
+                    let prev = lk.waker.replace(cx.waker().clone());
+                    assert!(prev.is_none());
+                    Poll::Pending
+                }
+            }
+        }
+    }
+
+    pub fn close(&mut self) {
+        let mut lk = self.state.lock().unwrap();
+        if lk.is_closed {
+            return;
+        }
+        lk.is_closed = true;
+        // ask for poll
+        if let Some(w) = lk.waker.take() {
+            w.wake();
+        }
+    }
+}
+
+struct QWakableSigState<T: Clone> {
+    data: Option<T>,
+    wakers: LinkedList<Waker>, // multiple waker can register
+    is_closed: bool,
+    frontend_pending: bool,
+}
+
+impl<T: Clone> Default for QWakableSigState<T> {
+    fn default() -> Self {
+        Self {
+            data: Default::default(),
+            wakers: Default::default(),
+            is_closed: Default::default(),
+            frontend_pending: Default::default(),
+        }
+    }
+}
+
+pub struct QWakableSig<T: Clone> {
+    inner: Arc<Mutex<QWakableSigState<T>>>,
+}
+
+impl<T: Clone> Default for QWakableSig<T> {
+    fn default() -> Self {
+        Self {
+            inner: Default::default(),
+        }
+    }
+}
+
+impl<T: Clone> QWakableSig<T> {
+    // frontend has action pending. For example frontend initiated send
+    pub fn set_frontend_pending(&mut self) {
+        let mut lk = self.inner.lock().unwrap();
+        assert!(!lk.frontend_pending);
+        lk.frontend_pending = true;
+    }
+
+    pub fn is_frontend_pending(&self) -> bool {
+        let lk = self.inner.lock().unwrap();
+        lk.frontend_pending
+    }
+
+    // if none is returned, means the sig is cannceled.
+    // Multiple waker can poll.
+    pub fn poll(&mut self, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<T>> {
+        let mut lk = self.inner.lock().unwrap();
+        match &lk.data {
+            Some(s) => Poll::Ready(Some(s.clone())),
+            None => {
+                if lk.is_closed {
+                    Poll::Ready(None)
+                } else {
+                    // save waker
+                    lk.wakers.push_back(cx.waker().clone());
+                    Poll::Pending
+                }
+            }
+        }
+    }
+
+    pub fn set(&mut self, data: T) {
+        let mut lk = self.inner.lock().unwrap();
+        if lk.data.is_some() {
+            return; // already set
+        }
+        if lk.is_closed {
+            panic!("set after close");
+        }
+        lk.data.replace(data);
+        lk.frontend_pending = false; // the set corresponds to front end action, and we clear it here.
+                                     // wake all wakers
+        while let Some(w) = lk.wakers.pop_front() {
+            w.wake();
+        }
+    }
+
+    // reset to default state.
+    pub fn reset(&mut self) {
+        let mut lk = self.inner.lock().unwrap();
+        if lk.is_closed {
+            panic!("reset after close");
+        }
+        if !lk.wakers.is_empty() {
+            panic!("reset while waker is pending");
+        }
+        lk.data = None;
+    }
+
+    pub fn close(&mut self) {
+        let mut lk = self.inner.lock().unwrap();
+        if lk.is_closed {
+            return;
+        }
+        lk.is_closed = true;
+        // wake all waker
+        while let Some(w) = lk.wakers.pop_front() {
+            w.wake();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        future::poll_fn,
+        sync::atomic::AtomicUsize,
+        task::{Context, Poll},
+        time::Duration,
+    };
+
+    use crate::sync::QWakableQueue;
+
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    fn read_line(_cx: &mut Context<'_>) -> Poll<String> {
+        println!("readline called");
+        // the second poll should work
+        if COUNTER.fetch_add(1, std::sync::atomic::Ordering::Acquire) < 1 {
+            _cx.waker().clone().wake();
+            Poll::Pending
+        } else {
+            Poll::Ready("Hello, World!".into())
+        }
+    }
+
+    #[tokio::test]
+    async fn poll_test() {
+        let read_future = poll_fn(read_line);
+        assert_eq!(read_future.await, "Hello, World!".to_owned());
+    }
+
+    #[tokio::test]
+    async fn wake_test() {
+        // set in same thread
+        let mut wakable = QWakableQueue::default();
+        wakable.insert(String::from("hello"));
+        let fu = poll_fn(|cx| wakable.poll(cx));
+        let out = fu.await.unwrap();
+        assert_eq!(out, "hello");
+    }
+
+    #[tokio::test]
+    async fn wake_test2() {
+        // set from different task
+        let mut wakable = QWakableQueue::default();
+        let mut w_cp = wakable.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            w_cp.insert(String::from("hello"));
+            w_cp.insert(String::from("hello2"));
+        });
+        let mut wakable_cp = wakable.clone();
+        let fu = poll_fn(|cx| wakable_cp.poll(cx));
+        let out = fu.await.unwrap();
+        assert_eq!(out, "hello");
+        let fu2 = poll_fn(|cx| wakable.poll(cx));
+        let out2 = fu2.await.unwrap();
+        assert_eq!(out2, "hello2");
+    }
+
+    #[tokio::test]
+    async fn wake_test3() {
+        // close
+        let mut wakable: QWakableQueue<String> = Default::default();
+        let mut w_cp = wakable.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            w_cp.close();
+        });
+        let fu = poll_fn(|cx| wakable.poll(cx));
+        let out = fu.await;
+        assert!(out.is_none());
     }
 }
