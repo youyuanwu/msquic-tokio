@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::{
-    buffer::{debug_buf_to_string, debug_raw_buf_to_string, QBufWrap, QBytesMut},
+    buffer::{QBufWrap, QBytesMut},
     conn::QConnection,
     info,
     sync::{QSignal, QWakableQueue, QWakableSig},
@@ -46,7 +46,7 @@ struct QStreamCtx {
     start_sig: QWakableQueue<StartPayload>,
     receive_ch: QWakableQueue<QBytesMut>,
     send_sig: QWakableSig<SentPayload>,
-    send_shtdwn_sig: QSignal,
+    send_shtdwn_sig: QWakableSig<()>,
     drain_sig: QSignal,
     is_drained: bool,
     pending_buf: Option<QBufWrap>, // because msquic copies buffers in background we need to hold the buffer temporarily
@@ -58,7 +58,7 @@ impl QStreamCtx {
             start_sig: QWakableQueue::default(),
             receive_ch: QWakableQueue::default(),
             send_sig: QWakableSig::default(),
-            send_shtdwn_sig: QSignal::new(),
+            send_shtdwn_sig: QWakableSig::default(),
             drain_sig: QSignal::new(),
             is_drained: false,
             pending_buf: None,
@@ -81,15 +81,15 @@ impl QStreamCtx {
     fn on_receive(&mut self, buffs: &[Buffer]) {
         // send to frontend
         let v = QBytesMut::from_buffs(buffs);
-        let s = debug_buf_to_string(v.0.clone());
-        let original = debug_raw_buf_to_string(buffs[0]);
-        info!(
-            "debug: receive bytes: {} len:{}, original {}, len: {}",
-            s,
-            s.len(),
-            original,
-            original.len()
-        );
+        // let s = debug_buf_to_string(v.0.clone());
+        // let original = debug_raw_buf_to_string(buffs[0]);
+        // info!(
+        //     "debug: receive bytes: {} len:{}, original {}, len: {}",
+        //     s,
+        //     s.len(),
+        //     original,
+        //     original.len()
+        // );
         self.receive_ch.insert(v);
     }
     fn on_peer_send_shutdown(&mut self) {
@@ -102,9 +102,7 @@ impl QStreamCtx {
         self.receive_ch.close();
     }
     fn on_send_shutdown_complete(&mut self) {
-        if self.send_shtdwn_sig.can_set() {
-            self.send_shtdwn_sig.set(());
-        }
+        self.send_shtdwn_sig.set(());
     }
     fn on_shutdown_complete(&mut self) {
         // close all channels
@@ -269,7 +267,7 @@ impl QStream {
     //     // TODO: handle error
     //     let _ = self.inner.inner.receive_complete(len);
     // }
-    pub fn send_only(&mut self, buffers: impl Buf + 'static, flags: SendFlags) {
+    pub fn send_only(&mut self, buffers: impl Buf, flags: SendFlags) {
         let mut lk = self.ctx.lock().unwrap();
         lk.send_sig.set_frontend_pending();
         let b = QBufWrap::new(Box::new(buffers));
@@ -306,11 +304,7 @@ impl QStream {
         }
     }
 
-    pub async fn send(
-        &mut self,
-        buffers: impl Buf + 'static,
-        flags: SendFlags,
-    ) -> Result<(), Error> {
+    pub async fn send(&mut self, buffers: impl Buf, flags: SendFlags) -> Result<(), Error> {
         self.send_only(buffers, flags);
         let fu = poll_fn(|cx| self.poll_send(cx));
         fu.await
@@ -326,15 +320,27 @@ impl QStream {
         Self::poll_send_inner(&mut lk, cx)
     }
 
+    pub fn shutdown_only(&mut self) {
+        let mut lk = self.ctx.lock().unwrap();
+        lk.send_shtdwn_sig.reset();
+        self.inner.inner.shutdown(STREAM_SHUTDOWN_FLAG_NONE, 0);
+    }
+
+    pub fn poll_shutdown(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Result<(), Error>> {
+        let mut lk = self.ctx.lock().unwrap();
+        let p = lk.send_shtdwn_sig.poll(cx);
+        match p {
+            Poll::Ready(_) => Poll::Ready(Ok(())),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
     // send shutdown signal to peer.
     // do not call this if already indicated shutdown during send.
-    pub async fn shutdown(&mut self) {
-        let rx;
-        {
-            rx = self.ctx.lock().unwrap().send_shtdwn_sig.reset();
-            self.inner.inner.shutdown(STREAM_SHUTDOWN_FLAG_NONE, 0);
-        }
-        rx.await;
+    pub async fn shutdown(&mut self) -> Result<(), Error> {
+        self.shutdown_only();
+        let fu = poll_fn(|cx| self.poll_shutdown(cx));
+        fu.await
     }
 
     // this is for h3 where the interface does not wait

@@ -8,13 +8,11 @@ edition = "2021"
 [dependencies]
 "c2" = {path = "../c2"}
 "hex" = "0.4"
-# log = "0.4"
 tokio = {version = "1", features = ["sync"]}
 tracing = { version = "0.1.40", features = ["log"] }
 bytes = "*"
-h3 = "*"
+h3 = "0.0.5"
 
 [dev-dependencies]
-# env_logger = "0.10.1"
 tokio = {version = "1", features = ["full"]}
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["fmt"]}

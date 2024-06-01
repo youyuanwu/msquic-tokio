@@ -144,35 +144,40 @@ impl From<&SBuffer> for Buffer {
     }
 }
 
+// Currently we copy the buf into vec for ease of code
 pub struct QBufWrap {
-    _inner: Box<dyn Buf>, // mem owner
+    _inner: Vec<Vec<u8>>, // mem owner
     v: Vec<Buffer>,
 }
 
 unsafe impl Send for QBufWrap {}
 
 impl QBufWrap {
-    pub fn new(mut buf: Box<dyn Buf>) -> Self {
+    pub fn new(buf: impl Buf) -> Self {
         // make on heap so that no ptr move.
-        let v = Self::convert_buf(&mut buf);
-        Self { _inner: buf, v }
+        let (vcs, vbs) = Self::convert_buf(buf);
+        Self {
+            _inner: vcs,
+            v: vbs,
+        }
     }
 
-    fn convert_buf(b: &mut Box<dyn Buf>) -> Vec<Buffer> {
-        let mut v = Vec::new();
+    fn convert_buf(mut b: impl Buf) -> (Vec<Vec<u8>>, Vec<Buffer>) {
+        let mut vcs = Vec::new();
+        let mut vbs = Vec::new();
         // change buf to vecs
         while b.has_remaining() {
+            // copy
             let ck = b.chunk();
-            v.push(Buffer {
-                length: ck.len() as u32,
-                buffer: ck.as_ptr() as *mut u8,
+            let vc = Vec::from(ck);
+            vbs.push(Buffer {
+                length: vc.len() as u32,
+                buffer: vc.as_ptr() as *mut u8,
             });
+            vcs.push(vc);
             b.advance(ck.len());
         }
-        v
-        // let bb =
-        //     v.iter().map(|s|{ Buffer{ length: s.len() as u32, buffer: s.as_ptr() as *mut u8 } }).collect::<Vec<_>>();
-        // bb
+        (vcs, vbs)
     }
 
     pub fn as_buffs(&self) -> &[Buffer] {

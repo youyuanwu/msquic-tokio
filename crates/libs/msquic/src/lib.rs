@@ -15,7 +15,7 @@ pub mod stream;
 pub mod sync;
 mod utils;
 
-//pub mod msh3;
+pub mod msh3;
 
 // Some useful defs
 pub const QUIC_STATUS_PENDING: u32 = 0x703e5;
