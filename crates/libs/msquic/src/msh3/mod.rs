@@ -1,10 +1,10 @@
 // h3 wrappings for msquic
 
-use std::fmt::Display;
+use std::{fmt::Display, task::Poll};
 
 use bytes::{Buf, BytesMut};
-use c2::SEND_FLAG_NONE;
-use h3::quic::{BidiStream, Connection, OpenStreams, RecvStream, SendStream, StreamId};
+use c2::{SEND_FLAG_NONE, STREAM_OPEN_FLAG_NONE, STREAM_OPEN_FLAG_UNIDIRECTIONAL};
+use h3::quic::{BidiStream, Connection, OpenStreams, RecvStream, SendStream};
 
 use crate::{conn::QConnection, stream::QStream};
 
@@ -58,18 +58,23 @@ impl<B: Buf> OpenStreams<B> for H3Conn {
         &mut self,
         _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<Self::BidiStream, Self::Error>> {
-        todo!()
+        let s = QStream::open(&self._inner, STREAM_OPEN_FLAG_NONE);
+        // TODO: start?
+        Poll::Ready(Ok(H3Stream::new(s)))
     }
 
     fn poll_open_send(
         &mut self,
         _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<Self::SendStream, Self::Error>> {
-        todo!()
+        let s = QStream::open(&self._inner, STREAM_OPEN_FLAG_UNIDIRECTIONAL);
+        // TODO: start?
+        Poll::Ready(Ok(H3Stream::new(s)))
     }
 
-    fn close(&mut self, _code: h3::error::Code, _reason: &[u8]) {
-        todo!()
+    fn close(&mut self, code: h3::error::Code, _reason: &[u8]) {
+        // TODO?
+        self._inner.shutdown_only(code.value())
     }
 }
 
@@ -116,22 +121,20 @@ impl<B: Buf> Connection<B> for H3Conn {
         todo!()
     }
 
-    fn close(&mut self, _code: h3::error::Code, _reason: &[u8]) {
-        todo!()
+    fn close(&mut self, code: h3::error::Code, _reason: &[u8]) {
+        self._inner.shutdown_only(code.value())
     }
 }
 
 pub struct H3Stream {
     inner: QStream,
-    id: h3::quic::StreamId,
     shutdown: bool,
 }
 
 impl H3Stream {
-    fn new(s: QStream, id: StreamId) -> Self {
+    fn new(s: QStream) -> Self {
         Self {
             inner: s,
-            id,
             shutdown: false,
         }
     }
@@ -175,7 +178,7 @@ impl<B: Buf> SendStream<B> for H3Stream {
     }
 
     fn send_id(&self) -> h3::quic::StreamId {
-        self.id
+        self.inner.get_id().try_into().expect("cannot convert id")
     }
 }
 
@@ -184,16 +187,15 @@ impl RecvStream for H3Stream {
 
     type Error = H3Error;
 
+    // currently error is not propagated.
     fn poll_data(
         &mut self,
-        _cx: &mut std::task::Context<'_>,
+        cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<Option<Self::Buf>, Self::Error>> {
-        //        let fu = self.inner.receive();
-        // let innner = <Receiver<T> as Future>::poll(Pin::new(&mut self.rx), _cx);
-        //Pin::new(&mut fu).poll(cx);
-        // let mut pinned_fut = pin!(fu);
-        // pinned_fut.poll(cx);
-        todo!()
+        match self.inner.poll_receive(cx) {
+            std::task::Poll::Ready(br) => Poll::Ready(Ok(br)),
+            std::task::Poll::Pending => Poll::Pending,
+        }
     }
 
     fn stop_sending(&mut self, error_code: u64) {
@@ -201,7 +203,8 @@ impl RecvStream for H3Stream {
     }
 
     fn recv_id(&self) -> h3::quic::StreamId {
-        self.id
+        let id = self.inner.get_id();
+        id.try_into().expect("invalid stream id")
     }
 }
 
@@ -212,7 +215,6 @@ impl<B: Buf> BidiStream<B> for H3Stream {
 
     fn split(self) -> (Self::SendStream, Self::RecvStream) {
         let cp = self.inner.clone();
-        let id = self.id;
-        (self, H3Stream::new(cp, id))
+        (self, H3Stream::new(cp))
     }
 }

@@ -22,6 +22,7 @@ use libc::c_void;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::fmt;
+use std::mem::size_of_val;
 use std::option::Option;
 use std::ptr;
 #[macro_use]
@@ -1738,6 +1739,20 @@ impl Stream {
             error_code,
         );
         assert!(Status::succeeded(status), "Code: 0x{:x}", status);
+    }
+
+    // get stream id
+    pub fn get_id(&self) -> u64 {
+        let mut id: u64 = 0;
+        let size = size_of_val(&id) as u32;
+        let status = (unsafe { self.table.as_ref().unwrap().get_param })(
+            self.handle,
+            PARAM_STREAM_ID,
+            std::ptr::addr_of!(size) as *mut u32,
+            std::ptr::addr_of_mut!(id) as *mut c_void,
+        );
+        assert!(Status::succeeded(status), "Code: 0x{:x}", status);
+        id
     }
 }
 

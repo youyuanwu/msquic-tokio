@@ -168,7 +168,7 @@ mod tests {
                             rth.spawn(async move {
                                 info!("server accepted stream");
                                 let mut s = s.unwrap();
-                                info!("server stream receive");
+                                info!("server stream {} receive", s.get_id());
                                 let read = s.receive().await.unwrap();
                                 let payload = debug_buf_to_string(read);
                                 info!("server received len {}", payload.len());
@@ -182,7 +182,7 @@ mod tests {
                             });
                         }
                         info!("server conn shutdown");
-                        conn.shutdown().await;
+                        conn.shutdown(0).await;
                         info!("server conn shutdown end");
                     });
                 }
@@ -224,7 +224,7 @@ mod tests {
                 info!("client stream start");
                 st.start(STREAM_START_FLAG_NONE).await.unwrap();
                 let args = Bytes::from("hello");
-                info!("client stream send");
+                info!("client stream {} send", st.get_id());
                 st.send(args, SEND_FLAG_FIN).await.unwrap();
 
                 info!("client stream receive");
@@ -235,7 +235,7 @@ mod tests {
                 info!("client stream drain");
                 st.drain().await;
                 info!("client conn shutdown");
-                conn.shutdown().await;
+                conn.shutdown(0).await;
                 // shutdown server
                 sht_tx.send(()).unwrap();
             });

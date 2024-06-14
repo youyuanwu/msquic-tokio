@@ -3,9 +3,9 @@ use crate::{
     info,
     reg::QRegistration,
     stream::QStream,
-    sync::{QQueue, QReceiver, QResetChannel, QSignal},
+    sync::{QQueue, QReceiver, QResetChannel, QWakableSig},
 };
-use std::{ffi::c_void, fmt::Debug, io::Error, sync::Mutex};
+use std::{ffi::c_void, fmt::Debug, future::poll_fn, io::Error, sync::Mutex, task::Poll};
 
 use c2::{
     Configuration, Connection, ConnectionEvent, Handle, SendResumptionFlags,
@@ -51,7 +51,7 @@ enum ConnStatus {
 struct QConnectionCtx {
     _api: QApi,
     strm_ch: QQueue<QStream>,
-    shtdwn_sig: QSignal,
+    shtdwn_sig: QWakableSig<()>,
     //state: Mutex<State>,
     conn_ch: QResetChannel<ConnStatus>, // handle connect success or transport close
     proceed_rx: Option<QReceiver<ConnStatus>>, // used for server wait conn
@@ -135,7 +135,7 @@ impl QConnectionCtx {
         Self {
             _api: api.clone(),
             strm_ch: QQueue::new(),
-            shtdwn_sig: QSignal::new(),
+            shtdwn_sig: QWakableSig::default(),
             conn_ch: QResetChannel::new(),
             proceed_rx: None,
         }
@@ -165,9 +165,7 @@ impl QConnectionCtx {
     }
     fn on_shutdown_complete(&mut self) {
         self.strm_ch.close(0);
-        if self.shtdwn_sig.can_set() {
-            self.shtdwn_sig.set(());
-        }
+        self.shtdwn_sig.set(());
     }
     fn on_peer_stream_started(&mut self, h: Handle) {
         let s = QStream::attach(self._api.clone(), h);
@@ -269,16 +267,28 @@ impl QConnection {
         }
     }
 
-    pub async fn shutdown(&mut self) {
-        let rx;
-        {
-            rx = self.ctx.lock().unwrap().shtdwn_sig.reset();
+    pub fn shutdown_only(&self, ec: u64) {
+        self.inner.inner.shutdown(CONNECTION_SHUTDOWN_FLAG_NONE, ec); // ec
+    }
+
+    pub fn poll_shutdown(&mut self, cx: &mut std::task::Context<'_>) -> Poll<()> {
+        let mut lk = self.ctx.lock().unwrap();
+        let p = lk.shtdwn_sig.poll(cx);
+        match p {
+            Poll::Ready(_) => Poll::Ready(()),
+            Poll::Pending => Poll::Pending,
         }
-        info!("conn invoke shutdown");
-        // callback maybe sync
-        self.inner.inner.shutdown(CONNECTION_SHUTDOWN_FLAG_NONE, 0); // ec
-        info!("conn wait for shutdown evnet");
-        rx.await;
-        info!("conn wait for shutdown evnet end");
+    }
+
+    pub async fn shutdown(&mut self, ec: u64) {
+        {
+            let mut lk = self.ctx.lock().unwrap();
+            if !lk.shtdwn_sig.is_frontend_pending() {
+                lk.shtdwn_sig.set_frontend_pending();
+                self.shutdown_only(ec)
+            }
+        }
+        let fu = poll_fn(|cx| self.poll_shutdown(cx));
+        fu.await
     }
 }

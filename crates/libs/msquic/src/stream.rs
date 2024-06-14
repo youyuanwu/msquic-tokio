@@ -15,7 +15,7 @@ use crate::{
     utils::SBox,
     QApi,
 };
-use bytes::Buf;
+use bytes::{Buf, BytesMut};
 use c2::{
     Buffer, Handle, SendFlags, Stream, StreamEvent, StreamOpenFlags, StreamStartFlags,
     STREAM_EVENT_PEER_RECEIVE_ABORTED, STREAM_EVENT_PEER_SEND_ABORTED,
@@ -242,15 +242,16 @@ impl QStream {
         fu.await
     }
 
+    // todo: propagate error
     pub fn poll_receive(
         &mut self,
         cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<impl Buf, Error>> {
+    ) -> std::task::Poll<Option<BytesMut>> {
         let p = self.ctx.lock().unwrap().receive_ch.poll(cx);
         match p {
             Poll::Ready(op) => match op {
-                Some(b) => Poll::Ready(Ok(b.0)),
-                None => Poll::Ready(Err(Error::from(ErrorKind::BrokenPipe))),
+                Some(b) => Poll::Ready(Some(b.0)),
+                None => Poll::Ready(None),
             },
             Poll::Pending => Poll::Pending,
         }
@@ -258,7 +259,7 @@ impl QStream {
 
     // receive into this buff
     // return num of bytes wrote.
-    pub async fn receive(&mut self) -> Result<impl Buf, Error> {
+    pub async fn receive(&mut self) -> Option<BytesMut> {
         let fu = poll_fn(|cx| self.poll_receive(cx));
         fu.await
     }
@@ -362,5 +363,10 @@ impl QStream {
             rx = lk.drain_sig.reset();
         }
         rx.await;
+    }
+
+    // get stream id
+    pub fn get_id(&self) -> u64 {
+        self.inner.inner.get_id()
     }
 }
