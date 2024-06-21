@@ -7,7 +7,16 @@
 use windows_bindgen::{bindgen, Result};
 
 fn main() -> Result<()> {
-    let log = bindgen(["--etc", "bindings.txt"])?;
+    let log = bindgen([
+        "--in",
+        "./.windows/winmd/Microsoft.MsQuic.winmd",
+        "--out",
+        "crates/libs/c/src/Microsoft.rs",
+        "--filter",
+        "Microsoft",
+        "--config",
+        "implement",
+    ])?;
     println!("{}", log);
     Ok(())
 }

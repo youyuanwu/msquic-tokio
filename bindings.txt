@@ -1,7 +1,0 @@
---in  ./.windows/winmd/Microsoft.MsQuic.winmd
---out crates/libs/c/src/Microsoft.rs
-
---filter Microsoft
-
---config
-  package=true

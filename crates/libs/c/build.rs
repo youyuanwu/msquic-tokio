@@ -12,7 +12,7 @@ fn main() {
     let project_root = package_root + "/../../../";
     let abs_search_dir;
     if cfg!(windows) {
-        // add link dir for fabric support libs. This is propagated to downstream targets
+        // add link dir for msquic support lib. This is propagated to downstream targets
         abs_search_dir = project_root + &pkg_dir + "/lib";
     } else if cfg!(unix) {
         abs_search_dir = project_root + "build"; // hack: we create a symlink in the build dir to let ld not deal with .so versions
