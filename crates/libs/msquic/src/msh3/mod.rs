@@ -50,14 +50,12 @@ impl<B: Buf> OpenStreams<B> for H3Conn {
 
     type SendStream = H3Stream;
 
-    type RecvStream = H3Stream;
-
-    type Error = H3Error;
+    type OpenError = H3Error;
 
     fn poll_open_bidi(
         &mut self,
         _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<Self::BidiStream, Self::Error>> {
+    ) -> std::task::Poll<Result<Self::BidiStream, Self::OpenError>> {
         let s = QStream::open(&self._inner, STREAM_OPEN_FLAG_NONE);
         // TODO: start?
         Poll::Ready(Ok(H3Stream::new(s)))
@@ -66,7 +64,7 @@ impl<B: Buf> OpenStreams<B> for H3Conn {
     fn poll_open_send(
         &mut self,
         _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<Self::SendStream, Self::Error>> {
+    ) -> std::task::Poll<Result<Self::SendStream, Self::OpenError>> {
         let s = QStream::open(&self._inner, STREAM_OPEN_FLAG_UNIDIRECTIONAL);
         // TODO: start?
         Poll::Ready(Ok(H3Stream::new(s)))
@@ -79,50 +77,28 @@ impl<B: Buf> OpenStreams<B> for H3Conn {
 }
 
 impl<B: Buf> Connection<B> for H3Conn {
-    type BidiStream = H3Stream;
-
-    type SendStream = H3Stream;
-
     type RecvStream = H3Stream;
 
     type OpenStreams = H3Conn;
 
-    type Error = H3Error;
+    type AcceptError = H3Error;
 
     fn poll_accept_recv(
         &mut self,
         _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<Option<Self::RecvStream>, Self::Error>> {
+    ) -> std::task::Poll<Result<Option<Self::RecvStream>, Self::AcceptError>> {
         todo!()
     }
 
     fn poll_accept_bidi(
         &mut self,
         _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<Option<Self::BidiStream>, Self::Error>> {
-        todo!()
-    }
-
-    fn poll_open_bidi(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<Self::BidiStream, Self::Error>> {
-        todo!()
-    }
-
-    fn poll_open_send(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<Self::SendStream, Self::Error>> {
+    ) -> std::task::Poll<Result<Option<Self::BidiStream>, Self::AcceptError>> {
         todo!()
     }
 
     fn opener(&self) -> Self::OpenStreams {
         todo!()
-    }
-
-    fn close(&mut self, code: h3::error::Code, _reason: &[u8]) {
-        self._inner.shutdown_only(code.value())
     }
 }
 

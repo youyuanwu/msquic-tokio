@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 project(msquic-asio)
 
-set(_msquic_version "v2.3.5")
+set(_msquic_version "v2.4.5")
 
 if(WIN32)
   set(release_url "https://github.com/microsoft/msquic/releases/download/${_msquic_version}/msquic_windows_x64_Release_schannel.zip")

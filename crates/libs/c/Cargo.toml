@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 windows-core = "0.57.0"
 windows = { version = "0.57.0", features = [ "Win32_Foundation", "Win32_Networking_WinSock"]}
-mssf-pal = "0.0.4"
+mssf-pal = "0"
 
 [features]
 Foundation = []

@@ -1828,6 +1828,7 @@ extern "C" fn test_stream_callback(
 }
 
 #[test]
+#[ignore = "copied"]
 fn test_module() {
     let api = Api::new();
     let registration = Registration::new(&api, ptr::null());
