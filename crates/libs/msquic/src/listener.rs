@@ -3,11 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::{
-    conn::QConnection,
-    info,
-    sync::{QQueue, QResetChannel, QSignal},
-};
+use crate::{conn::QConnection, info};
 use c2::{
     Addr, Buffer, Configuration, Handle, Listener, ListenerEvent, LISTENER_EVENT_NEW_CONNECTION,
 };
@@ -17,15 +13,15 @@ use crate::{config::QConfiguration, reg::QRegistration, utils::SBox, QApi};
 pub struct QListener {
     _api: QApi,
     inner: SBox<Listener>,
-    ctx: Box<Mutex<QListenerCtx>>,
+    ctx: Box<Mutex<QListenerCtx>>, // TODO: mutex may be removed.
+    ch_rx: tokio::sync::mpsc::UnboundedReceiver<QConnection>,
 }
 
 struct QListenerCtx {
     _api: QApi,
-    ch: QQueue<QConnection>,
+    ch_tx: Option<tokio::sync::mpsc::UnboundedSender<QConnection>>,
     config: Arc<SBox<Configuration>>,
     state: State, // for validation only
-    sig_stop: QSignal,
 }
 
 #[derive(PartialEq, Debug)]
@@ -79,12 +75,12 @@ extern "C" fn listener_handler(
 impl QListener {
     // server open listener
     pub fn open(registration: &QRegistration, configuration: &QConfiguration) -> Self {
+        let (ch_tx, ch_rx) = tokio::sync::mpsc::unbounded_channel();
         let context = Box::new(Mutex::new(QListenerCtx {
             _api: registration.api.clone(),
-            ch: QQueue::new(),
             config: configuration.inner.clone(),
             state: State::Idle,
-            sig_stop: QResetChannel::new(),
+            ch_tx: Some(ch_tx),
         }));
         let l = Listener::new(
             &registration.inner.inner,
@@ -95,6 +91,7 @@ impl QListener {
             _api: registration.api.clone(),
             inner: SBox { inner: l },
             ctx: context,
+            ch_rx,
         }
     }
 
@@ -108,48 +105,37 @@ impl QListener {
     }
 
     pub async fn accept(&mut self) -> Option<QConnection> {
-        let rx;
-        {
-            let mut lk = self.ctx.lock().unwrap();
-            if lk.state == State::Stopped {
-                return None;
-            }
-            assert_ne!(lk.state, State::Idle);
-            rx = lk.ch.pop();
-        }
-        let res = rx.await;
-        match res {
-            Ok(c) => Some(c),
-            Err(_) => None,
-        }
+        self.ch_rx.recv().await
     }
 
     pub async fn stop(&mut self) {
-        let rx;
         {
             let mut lk = self.ctx.lock().unwrap();
             assert_eq!(lk.state, State::Started);
             lk.state = State::StopRequested;
-            rx = lk.sig_stop.reset();
         }
         // callback may be invoked in the same thread.
         info!("listner stop requested.");
         self.inner.inner.stop();
-        info!("wait for stop_rx signal.");
-        // wait for drain.
-        rx.await;
-        info!("wait for stop_rx signal ok.");
+        info!("wait for mpsc sender to drop");
+        while !self.ch_rx.is_closed() {
+            tokio::task::yield_now().await;
+        }
+        info!("wait for mpsc sender to drop ok.");
     }
 }
 
 impl QListenerCtx {
     fn on_new_connection(&mut self, conn: Handle) {
         let c = QConnection::attach(self._api.clone(), conn, &self.config.inner);
-        self.ch.insert(c);
+        self.ch_tx
+            .as_ref()
+            .expect("sender already closed")
+            .send(c)
+            .expect("receiver should not be closed");
     }
 
     fn on_stop_complete(&mut self) {
-        self.ch.close(0);
-        self.sig_stop.set(());
+        self.ch_tx = None; // this drops the sender.
     }
 }

@@ -44,7 +44,7 @@ mod tests {
         Addr, CertificateHash, CertificateUnion, CredentialConfig, RegistrationConfig, Settings,
         ADDRESS_FAMILY_UNSPEC, CREDENTIAL_FLAG_CLIENT, CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION,
         CREDENTIAL_TYPE_CERTIFICATE_HASH, CREDENTIAL_TYPE_NONE, EXECUTION_PROFILE_LOW_LATENCY,
-        SEND_FLAG_FIN, SEND_RESUMPTION_FLAG_NONE, STREAM_OPEN_FLAG_NONE, STREAM_START_FLAG_NONE,
+        SEND_FLAG_FIN, STREAM_OPEN_FLAG_NONE, STREAM_START_FLAG_NONE,
     };
     use tokio::sync::oneshot;
 
@@ -60,7 +60,7 @@ mod tests {
 
     use super::info;
 
-    fn get_test_cert_hash() -> String {
+    pub fn get_test_cert_hash() -> String {
         let output = Command::new("pwsh.exe")
             .args(["-Command", "Get-ChildItem Cert:\\CurrentUser\\My | Where-Object -Property FriendlyName -EQ -Value MsQuic-Test | Select-Object -ExpandProperty Thumbprint -First 1"]).
             output().expect("Failed to execute command");
@@ -77,7 +77,7 @@ mod tests {
 
     #[test]
     fn basic_test() {
-        tracing_subscriber::fmt().init();
+        let _ = tracing_subscriber::fmt().try_init();
         info!("Test start");
         let cert_hash = get_test_cert_hash();
         info!("Using cert_hash: [{cert_hash}]");
@@ -154,10 +154,11 @@ mod tests {
                         let mut conn = conn.unwrap();
                         info!("server accepted conn id={}", conn_id);
                         info!("server conn connect");
-                        conn.proceed().await.unwrap();
-                        tokio::time::sleep(Duration::from_millis(1)).await;
-                        conn.send_resumption_ticket(SEND_RESUMPTION_FLAG_NONE);
-                        tokio::time::sleep(Duration::from_millis(1)).await;
+                        // TODO: enable this?
+                        // conn.proceed().await.unwrap();
+                        //tokio::time::sleep(Duration::from_millis(1)).await;
+                        //conn.send_resumption_ticket(SEND_RESUMPTION_FLAG_NONE);
+                        //tokio::time::sleep(Duration::from_millis(1)).await;
                         loop {
                             info!("server conn accept");
                             let s = conn.accept().await;

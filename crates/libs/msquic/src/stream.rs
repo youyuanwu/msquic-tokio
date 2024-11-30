@@ -1,5 +1,6 @@
 use std::{
     ffi::c_void,
+    fmt::Debug,
     future::poll_fn,
     io::{Error, ErrorKind},
     slice,
@@ -17,8 +18,8 @@ use crate::{
 };
 use bytes::{Buf, BytesMut};
 use c2::{
-    Buffer, Handle, SendFlags, Stream, StreamEvent, StreamOpenFlags, StreamStartFlags,
-    STREAM_EVENT_PEER_RECEIVE_ABORTED, STREAM_EVENT_PEER_SEND_ABORTED,
+    Buffer, Handle, SendFlags, Stream, StreamEvent, StreamOpenFlags, StreamShutdownFlags,
+    StreamStartFlags, STREAM_EVENT_PEER_RECEIVE_ABORTED, STREAM_EVENT_PEER_SEND_ABORTED,
     STREAM_EVENT_PEER_SEND_SHUTDOWN, STREAM_EVENT_RECEIVE, STREAM_EVENT_SEND_COMPLETE,
     STREAM_EVENT_SEND_SHUTDOWN_COMPLETE, STREAM_EVENT_SHUTDOWN_COMPLETE,
     STREAM_EVENT_START_COMPLETE, STREAM_SHUTDOWN_FLAG_GRACEFUL, STREAM_SHUTDOWN_FLAG_NONE,
@@ -29,6 +30,16 @@ pub struct QStream {
     _api: QApi,
     inner: Arc<SBox<Stream>>, // arc needed for copy
     ctx: Arc<Mutex<QStreamCtx>>,
+}
+
+impl Debug for QStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("QStream")
+            .field("_api", &"skip")
+            .field("inner", &self.inner)
+            .field("ctx", &"skip")
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -321,10 +332,10 @@ impl QStream {
         Self::poll_send_inner(&mut lk, cx)
     }
 
-    pub fn shutdown_only(&mut self) {
+    pub fn shutdown_only(&mut self, flags: StreamShutdownFlags) {
         let mut lk = self.ctx.lock().unwrap();
         lk.send_shtdwn_sig.reset();
-        self.inner.inner.shutdown(STREAM_SHUTDOWN_FLAG_NONE, 0);
+        self.inner.inner.shutdown(flags, 0);
     }
 
     pub fn poll_shutdown(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Result<(), Error>> {
@@ -339,7 +350,7 @@ impl QStream {
     // send shutdown signal to peer.
     // do not call this if already indicated shutdown during send.
     pub async fn shutdown(&mut self) -> Result<(), Error> {
-        self.shutdown_only();
+        self.shutdown_only(STREAM_SHUTDOWN_FLAG_NONE);
         let fu = poll_fn(|cx| self.poll_shutdown(cx));
         fu.await
     }

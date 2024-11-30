@@ -272,6 +272,7 @@ dependencies = [
  "c2",
  "h3",
  "hex",
+ "http",
  "tokio",
  "tracing",
  "tracing-subscriber",
