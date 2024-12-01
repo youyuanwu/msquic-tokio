@@ -1158,7 +1158,7 @@ pub struct Listener {
 /// A single QUIC stream on a parent connection.
 pub struct Stream {
     table: *const ApiTable,
-    handle: Handle,
+    pub handle: Handle,
 }
 
 impl From<&str> for Buffer {

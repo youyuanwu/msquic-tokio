@@ -151,6 +151,14 @@ impl H3Stream {
     fn get_id(&self) -> h3::quic::StreamId {
         self.inner.get_id().try_into().expect("cannot convert id")
     }
+
+    pub fn get_ref(&self) -> &QStream {
+        &self.inner
+    }
+
+    fn get_handle(&self) -> String {
+        format!("{:?}", self.get_ref().get_ref().handle)
+    }
 }
 
 impl<B: Buf> SendStream<B> for H3Stream {
@@ -164,12 +172,12 @@ impl<B: Buf> SendStream<B> for H3Stream {
             .inner
             .poll_ready_send(cx)
             .map_err(|e| H3Error::new(e, None));
-        info!("msh3 stream [{}] poll_ready {res:?}", self.get_id());
+        info!("msh3 stream [{}] poll_ready {res:?}", self.get_handle());
         res
     }
 
     fn send_data<T: Into<h3::quic::WriteBuf<B>>>(&mut self, data: T) -> Result<(), Self::Error> {
-        info!("msh3 stream [{}] send_data ok", self.get_id());
+        info!("msh3 stream [{}] send_data ok", self.get_handle());
         let b: h3::quic::WriteBuf<B> = data.into();
         self.inner.send_only(b, SEND_FLAG_NONE);
         Ok(())
@@ -178,7 +186,7 @@ impl<B: Buf> SendStream<B> for H3Stream {
     // send shutdown signal to peer?
     fn poll_finish(
         &mut self,
-        _cx: &mut std::task::Context<'_>,
+        cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
         // close the stream
         let do_work = !self.shutdown;
@@ -187,10 +195,13 @@ impl<B: Buf> SendStream<B> for H3Stream {
             self.shutdown = true;
         }
         // Does not need to poll? Seems like quinn does not poll this.
-        // let res = self.inner.poll_shutdown(cx).map_err(|e| H3Error::new(e, None));
+        let res = self
+            .inner
+            .poll_shutdown(cx)
+            .map_err(|e| H3Error::new(e, None));
         info!(
-            "msh3 stream [{}] poll_finish do work ok: {do_work}",
-            self.get_id()
+            "msh3 stream [{}] poll_finish do work ok: {do_work}, {res:?}",
+            self.get_handle()
         );
         Poll::Ready(Ok(()))
     }
@@ -218,12 +229,12 @@ impl RecvStream for H3Stream {
             std::task::Poll::Ready(br) => Poll::Ready(Ok(br)),
             std::task::Poll::Pending => Poll::Pending,
         };
-        info!("msh3 stream [{}] poll_data {res:?}", self.get_id());
+        info!("msh3 stream [{}] poll_data {res:?}", self.get_handle());
         res
     }
 
     fn stop_sending(&mut self, error_code: u64) {
-        info!("msh3 stream [{}] stop_sending ok", self.get_id());
+        info!("msh3 stream [{}] stop_sending ok", self.get_handle());
         self.inner.stop_sending(error_code);
     }
 
@@ -244,132 +255,4 @@ impl<B: Buf> BidiStream<B> for H3Stream {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use c2::{
-        CredentialConfig, RegistrationConfig, Settings, CREDENTIAL_FLAG_CLIENT,
-        CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION, CREDENTIAL_TYPE_NONE,
-        EXECUTION_PROFILE_LOW_LATENCY,
-    };
-    use tracing::info;
-
-    use crate::{
-        buffer::{QBufferVec, QVecBuffer},
-        config::QConfiguration,
-        conn::QConnection,
-        msh3::H3Conn,
-        reg::QRegistration,
-        QApi,
-    };
-
-    #[test]
-    fn basic_test() {
-        let _ = tracing_subscriber::fmt().try_init();
-        info!("Test start");
-
-        let api = QApi::default();
-
-        let config = RegistrationConfig {
-            app_name: "testapp".as_ptr() as *const i8,
-            execution_profile: EXECUTION_PROFILE_LOW_LATENCY,
-        };
-        let q_reg = QRegistration::new(&api, &config);
-
-        let args: [QVecBuffer; 1] = ["h3".into()];
-        let alpn = QBufferVec::from(args.as_slice());
-
-        // create an client
-        // open client
-        let mut client_settings = Settings::new();
-        client_settings.set_idle_timeout_ms(2000);
-        let client_config = QConfiguration::new(&q_reg, alpn.as_buffers(), &client_settings);
-        {
-            let mut cred_config = CredentialConfig::new_client();
-            cred_config.cred_type = CREDENTIAL_TYPE_NONE;
-            cred_config.cred_flags = CREDENTIAL_FLAG_CLIENT;
-            cred_config.cred_flags |= CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION;
-            client_config.load_cred(&cred_config);
-        }
-
-        let uri = http::Uri::from_static("https://h2o.examp1e.net:443");
-
-        // run client in another runtime.
-        tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .unwrap()
-            .block_on(async move {
-                let client_config = client_config;
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                info!("client conn open");
-                let mut conn = QConnection::open(&q_reg);
-                info!("client conn start");
-                conn.start(&client_config, uri.host().unwrap(), uri.port_u16().unwrap())
-                    .await
-                    .unwrap();
-
-                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-
-                let h_conn = H3Conn::new(conn);
-
-                let (mut driver, mut send_request) = h3::client::new(h_conn.clone()).await.unwrap();
-
-                let drive = async move {
-                    std::future::poll_fn(|cx| driver.poll_close(cx)).await?;
-                    Ok::<(), Box<dyn std::error::Error>>(())
-                };
-
-                tokio::time::sleep(std::time::Duration::from_millis(3)).await;
-                // In the following block, we want to take ownership of `send_request`:
-                // the connection will be closed only when all `SendRequest`s instances
-                // are dropped.
-                //
-                //             So we "move" it.
-                //                  vvvv
-                let request = async move {
-                    info!("sending request ...");
-
-                    let req = http::Request::builder().uri(uri).body(())?;
-
-                    // sending request results in a bidirectional stream,
-                    // which is also used for receiving response
-                    let mut stream = send_request.send_request(req).await?;
-
-                    // finish on the sending side
-                    stream.finish().await?;
-
-                    info!("receiving response ...");
-
-                    let resp = stream.recv_response().await?;
-
-                    info!("response: {:?} {}", resp.version(), resp.status());
-                    info!("headers: {:#?}", resp.headers());
-
-                    // `recv_data()` must be called after `recv_response()` for
-                    // receiving potential response body
-                    while let Some(mut chunk) = stream.recv_data().await? {
-                        let mut out = tokio::io::stdout();
-                        tokio::io::AsyncWriteExt::write_all_buf(&mut out, &mut chunk).await?;
-                        tokio::io::AsyncWriteExt::flush(&mut out).await?;
-                    }
-
-                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-                    Ok::<_, Box<dyn std::error::Error>>(())
-                };
-
-                let (req_res, drive_res) = tokio::join!(request, drive);
-                if let Err(e) = req_res {
-                    tracing::error!("req_err {e:?}");
-                }
-                if let Err(e) = drive_res {
-                    tracing::error!("drive_res {e:?}");
-                }
-
-                // wait for the connection to be closed before exiting
-                // h_conn.inner.lock().unwrap().
-                info!("sleeping at the end");
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            });
-    }
-}
+mod tests;

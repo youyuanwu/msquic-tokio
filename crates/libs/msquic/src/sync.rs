@@ -297,7 +297,8 @@ impl<T: Clone> QWakableSig<T> {
     pub fn set(&mut self, data: T) {
         let mut lk = self.inner.lock().unwrap();
         if lk.data.is_some() {
-            return; // already set
+            // replace with new data. TODO: panic?
+            // TODO: data should be taken when polled.
         }
         if lk.is_closed {
             panic!("set after close");

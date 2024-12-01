@@ -9,6 +9,10 @@ impl<T> SBox<T> {
     pub fn new(inner: T) -> Self {
         Self { inner }
     }
+
+    pub fn get_ref(&self) -> &T {
+        &self.inner
+    }
 }
 
 unsafe impl<T> Send for SBox<T> {}

@@ -20,7 +20,7 @@ pub struct QArrayBuffer<const N: usize> {
 
 // BuffRef can freely convert to or from Buffer.
 
-impl<'a> From<&QBuffRef<'a>> for Buffer {
+impl From<&QBuffRef<'_>> for Buffer {
     fn from(value: &QBuffRef) -> Self {
         Buffer {
             length: value.data.len() as u32,
@@ -30,7 +30,7 @@ impl<'a> From<&QBuffRef<'a>> for Buffer {
 }
 
 // Note: the lifetime from raw is not tracked.
-impl<'a> From<&Buffer> for QBuffRef<'a> {
+impl From<&Buffer> for QBuffRef<'_> {
     fn from(value: &Buffer) -> Self {
         let s =
             unsafe { std::slice::from_raw_parts(value.buffer, value.length.try_into().unwrap()) };

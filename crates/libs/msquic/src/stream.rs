@@ -14,7 +14,7 @@ use crate::{
     info,
     sync::{QSignal, QWakableQueue, QWakableSig},
     utils::SBox,
-    QApi,
+    QApi, QUIC_STATUS_SUCCESS,
 };
 use bytes::{Buf, BytesMut};
 use c2::{
@@ -55,7 +55,9 @@ enum StartPayload {
 
 struct QStreamCtx {
     start_sig: QWakableQueue<StartPayload>,
-    receive_ch: QWakableQueue<QBytesMut>,
+    //receive_ch: QWakableQueue<QBytesMut>, // TODO: change to mpsc
+    receive_tx: Option<tokio::sync::mpsc::UnboundedSender<QBytesMut>>,
+    receive_rx: tokio::sync::mpsc::UnboundedReceiver<QBytesMut>,
     send_sig: QWakableSig<SentPayload>,
     send_shtdwn_sig: QWakableSig<()>,
     drain_sig: QSignal,
@@ -65,14 +67,17 @@ struct QStreamCtx {
 
 impl QStreamCtx {
     fn new() -> Self {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         Self {
             start_sig: QWakableQueue::default(),
-            receive_ch: QWakableQueue::default(),
+            // receive_ch: QWakableQueue::default(),
             send_sig: QWakableSig::default(),
             send_shtdwn_sig: QWakableSig::default(),
             drain_sig: QSignal::new(),
             is_drained: false,
             pending_buf: None,
+            receive_tx: Some(tx),
+            receive_rx: rx,
         }
     }
 
@@ -90,6 +95,11 @@ impl QStreamCtx {
         self.send_sig.set(payload);
     }
     fn on_receive(&mut self, buffs: &[Buffer]) {
+        if buffs.is_empty() {
+            // sometimes msquic calls with 0 buffer.
+            // we ignore it because h3 does not handle it.
+            return;
+        }
         // send to frontend
         let v = QBytesMut::from_buffs(buffs);
         // let s = debug_buf_to_string(v.0.clone());
@@ -101,23 +111,28 @@ impl QStreamCtx {
         //     original,
         //     original.len()
         // );
-        self.receive_ch.insert(v);
+        self.receive_tx
+            .as_ref()
+            .expect("tx none")
+            .send(v)
+            .expect("fail send");
     }
     fn on_peer_send_shutdown(&mut self) {
         // peer can shutdown their direction. But we should receive what is pending.
         // Peer will no longer send new stuff, so the receive can be dropped.
         // if frontend is waiting stop it.
-        self.receive_ch.close();
+        self.receive_tx = None;
     }
     fn on_peer_send_abort(&mut self, _ec: u64) {
-        self.receive_ch.close();
+        self.receive_tx = None;
     }
     fn on_send_shutdown_complete(&mut self) {
         self.send_shtdwn_sig.set(());
     }
     fn on_shutdown_complete(&mut self) {
         // close all channels
-        self.receive_ch.close();
+        self.receive_tx = None;
+        self.send_shtdwn_sig.close();
         // drain signal
         self.is_drained = true;
         if self.drain_sig.can_set() {
@@ -134,7 +149,14 @@ extern "C" fn qstream_handler_callback(
     assert!(!context.is_null());
     let ctx = unsafe { (context as *mut Mutex<QStreamCtx>).as_mut().unwrap() };
     #[allow(clippy::mut_mutex_lock)]
-    let mut ctx = ctx.lock().unwrap();
+    let mut ctx = match ctx.lock() {
+        Ok(c) => c,
+        Err(_) => {
+            // use after free.
+            tracing::error!("[{:?}] event shoud panic: {:?}", stream, event.event_type);
+            return QUIC_STATUS_SUCCESS;
+        }
+    };
     let status = 0;
 
     match event.event_type {
@@ -156,10 +178,9 @@ extern "C" fn qstream_handler_callback(
             let curr = raw.buffer;
             let buffs = unsafe { slice::from_raw_parts(curr, count.try_into().unwrap()) };
             info!(
-                "[{:?}] QUIC_STREAM_EVENT_RECEIVE: buffer count {}, len {}",
+                "[{:?}] QUIC_STREAM_EVENT_RECEIVE: buffer count {}",
                 stream,
                 buffs.len(),
-                buffs[0].length
             );
             ctx.on_receive(buffs);
         }
@@ -195,6 +216,10 @@ extern "C" fn qstream_handler_callback(
 }
 
 impl QStream {
+    pub fn get_ref(&self) -> &Stream {
+        self.inner.as_ref().get_ref()
+    }
+
     pub fn attach(api: QApi, h: Handle) -> Self {
         let s = Stream::from_parts(h, &api.inner.inner);
         let ctx = Arc::new(Mutex::new(QStreamCtx::new()));
@@ -258,7 +283,7 @@ impl QStream {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<BytesMut>> {
-        let p = self.ctx.lock().unwrap().receive_ch.poll(cx);
+        let p = self.ctx.lock().unwrap().receive_rx.poll_recv(cx);
         match p {
             Poll::Ready(op) => match op {
                 Some(b) => Poll::Ready(Some(b.0)),
@@ -379,5 +404,24 @@ impl QStream {
     // get stream id
     pub fn get_id(&self) -> u64 {
         self.inner.inner.get_id()
+    }
+}
+
+impl Drop for QStream {
+    // force to wait stream shutdown. TODO:
+    fn drop(&mut self) {
+        let h = self.inner.inner.handle;
+        tracing::info!("Stream drop [{:?}]", h);
+        // let lk = self.ctx.lock().unwrap();
+        // if !lk.is_drained{
+        //     panic!("drop happens before shutdown callback");
+        // }
+        // loop {
+        //     let lk = self.ctx.lock().unwrap();
+        //     match lk.is_drained {
+        //         true => break,
+        //         false => std::thread::sleep(std::time::Duration::from_nanos(10)),
+        //     }
+        // }
     }
 }
