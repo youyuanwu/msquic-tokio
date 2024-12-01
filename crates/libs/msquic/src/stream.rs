@@ -12,7 +12,7 @@ use crate::{
     buffer::{QBufWrap, QBytesMut},
     conn::QConnection,
     info,
-    sync::{QSignal, QWakableQueue, QWakableSig},
+    sync::{QSignal, QWakableSig},
     utils::SBox,
     QApi, QUIC_STATUS_SUCCESS,
 };
@@ -54,7 +54,7 @@ enum StartPayload {
 }
 
 struct QStreamCtx {
-    start_sig: QWakableQueue<StartPayload>,
+    start_sig: QWakableSig<StartPayload>,
     //receive_ch: QWakableQueue<QBytesMut>, // TODO: change to mpsc
     receive_tx: Option<tokio::sync::mpsc::UnboundedSender<QBytesMut>>,
     receive_rx: tokio::sync::mpsc::UnboundedReceiver<QBytesMut>,
@@ -69,7 +69,7 @@ impl QStreamCtx {
     fn new() -> Self {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         Self {
-            start_sig: QWakableQueue::default(),
+            start_sig: QWakableSig::default(),
             // receive_ch: QWakableQueue::default(),
             send_sig: QWakableSig::default(),
             send_shtdwn_sig: QWakableSig::default(),
@@ -82,7 +82,7 @@ impl QStreamCtx {
     }
 
     fn on_start_complete(&mut self) {
-        self.start_sig.insert(StartPayload::Success);
+        self.start_sig.set(StartPayload::Success);
     }
     fn on_send_complete(&mut self, cancelled: bool) {
         let payload = if cancelled {

@@ -59,7 +59,7 @@ fn send_get_request(uri: Uri) {
                 .await
                 .unwrap();
 
-            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            // tokio::time::sleep(std::time::Duration::from_millis(1)).await;
 
             let h_conn = H3Conn::new(conn);
 
@@ -109,7 +109,7 @@ fn send_get_request(uri: Uri) {
                 }
                 let body = String::from_utf8_lossy(&data);
                 info!("body: {}", body);
-                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                // tokio::time::sleep(std::time::Duration::from_millis(5)).await;
                 Ok::<_, Box<dyn std::error::Error>>(())
             };
 
@@ -120,11 +120,7 @@ fn send_get_request(uri: Uri) {
             if let Err(e) = drive_res {
                 tracing::error!("drive_res {e:?}");
             }
-
-            // wait for the connection to be closed before exiting
-            // h_conn.inner.lock().unwrap().
-            info!("sleeping at the end");
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            info!("client ended success");
         });
 }
 
@@ -257,7 +253,7 @@ fn basic_server_test() {
                                         Ok(_) => tracing::info!("send body ok"),
                                         Err(e) => tracing::error!("send body err: {e}"),
                                     }
-                                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                                    // tokio::time::sleep(std::time::Duration::from_millis(20)).await;
                                     // close stream. it sends stuff without check ready.
                                     match stream.finish().await {
                                         Ok(_) => {
@@ -267,7 +263,7 @@ fn basic_server_test() {
                                     }
 
                                     // TODO: stream drop can happen to quickly.
-                                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                                    // tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                                 });
                             }
 
@@ -298,7 +294,7 @@ fn basic_server_test() {
     // send request
     let uri = http::Uri::from_static("https://localhost:4568");
     send_get_request(uri);
-    std::thread::sleep(Duration::from_secs(1));
+    //std::thread::sleep(Duration::from_secs(1));
     sht_tx.send(()).unwrap();
     th.join().unwrap();
 }

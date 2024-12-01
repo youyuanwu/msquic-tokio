@@ -45,19 +45,74 @@ impl Display for H3Error {
     }
 }
 
+/// Quic connection
 #[derive(Clone)]
 pub struct H3Conn {
     inner: Arc<std::sync::Mutex<QConnection>>, // some functions require mut. we need clone. TODO: move mutex to inner.
+    bidi: Arc<std::sync::Mutex<Option<H3Stream>>>, // holder for stream that is created but not started.
+    send: Arc<std::sync::Mutex<Option<H3Stream>>>,
 }
 
 impl H3Conn {
     pub fn new(inner: QConnection) -> Self {
         Self {
             inner: Arc::new(std::sync::Mutex::new(inner)),
+            bidi: Default::default(),
+            send: Default::default(),
+        }
+    }
+
+    // poll a opened but not yet started stream.
+    fn poll_start_stream(
+        s: &mut QStream,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<H3Stream, H3Error>> {
+        match s.poll_start(cx) {
+            Poll::Ready(ok) => match ok {
+                Ok(_) => Poll::Ready(Ok(H3Stream::new(s.clone()))),
+                Err(e) => Poll::Ready(Err(H3Error::new(e, None))),
+            },
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    /// Because msquic open and start are separate steps, and h3 expects opened
+    /// streams are started,
+    /// we cache the opened stream in connection if it start is pending.
+    /// the next poll from h3 will keep polling the cached stream for start.
+    fn poll_open_inner(
+        cache: &mut Arc<std::sync::Mutex<Option<H3Stream>>>,
+        inner: &Arc<std::sync::Mutex<QConnection>>,
+        flags: c2::StreamOpenFlags,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<H3Stream, H3Error>> {
+        // poll the cached stream waiting to be started.
+        // take the lock longer to prevent race.
+        let mut cache_lk = cache.lock().unwrap();
+        if let Some(s) = cache_lk.as_mut() {
+            let res = Self::poll_start_stream(&mut s.inner, cx);
+            if res.is_ready() {
+                // clear the cached bidi
+                cache_lk.take();
+            }
+            res
+        } else {
+            let lk = inner.as_ref().lock().unwrap();
+            let mut s = QStream::open(&lk, flags);
+            s.start_only(flags);
+            let res = Self::poll_start_stream(&mut s, cx);
+            let s = H3Stream::new(s);
+            if res.is_pending() {
+                // cache it for the poll next time.
+                let prev = cache_lk.replace(s);
+                assert!(prev.is_none());
+            }
+            res
         }
     }
 }
 
+/// Create new streams from connection.
 impl<B: Buf> OpenStreams<B> for H3Conn {
     type BidiStream = H3Stream;
 
@@ -67,38 +122,35 @@ impl<B: Buf> OpenStreams<B> for H3Conn {
 
     fn poll_open_bidi(
         &mut self,
-        _cx: &mut std::task::Context<'_>,
+        cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<Self::BidiStream, Self::OpenError>> {
-        info!("msh3 conn poll_open_bidi");
-        let lk = self.inner.as_ref().lock().unwrap();
-        let s = QStream::open(&lk, STREAM_OPEN_FLAG_NONE);
-        s.start_only(SEND_FLAG_NONE);
-        std::thread::sleep(std::time::Duration::from_millis(1));
-        // TODO: start? maybe sleep abit for now?
-        Poll::Ready(Ok(H3Stream::new(s)))
+        let res = Self::poll_open_inner(&mut self.bidi, &self.inner, STREAM_OPEN_FLAG_NONE, cx);
+        info!("msh3 conn poll_open_bidi: {res:?}");
+        res
     }
 
     fn poll_open_send(
         &mut self,
-        _cx: &mut std::task::Context<'_>,
+        cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<Self::SendStream, Self::OpenError>> {
-        info!("msh3 conn poll_open_send");
-        let lk = self.inner.as_ref().lock().unwrap();
-        let s = QStream::open(&lk, STREAM_OPEN_FLAG_UNIDIRECTIONAL);
-        s.start_only(STREAM_OPEN_FLAG_UNIDIRECTIONAL);
-        std::thread::sleep(std::time::Duration::from_millis(1));
-        // TODO: start? maybe sleep abit for now?
-        Poll::Ready(Ok(H3Stream::new(s)))
+        let res = Self::poll_open_inner(
+            &mut self.send,
+            &self.inner,
+            STREAM_OPEN_FLAG_UNIDIRECTIONAL,
+            cx,
+        );
+        info!("msh3 conn poll_open_send: {res:?}");
+        res
     }
 
     fn close(&mut self, code: h3::error::Code, _reason: &[u8]) {
         info!("msh3 conn close");
         let lk = self.inner.as_ref().lock().unwrap();
-        // TODO?
         lk.shutdown_only(code.value())
     }
 }
 
+/// Server accept new streams.
 impl<B: Buf> Connection<B> for H3Conn {
     type RecvStream = H3Stream;
 
@@ -128,6 +180,7 @@ impl<B: Buf> Connection<B> for H3Conn {
         res
     }
 
+    /// Object to create new streams.
     fn opener(&self) -> Self::OpenStreams {
         info!("msh3 conn opener");
         self.clone()
