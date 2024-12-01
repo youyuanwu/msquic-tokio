@@ -9,7 +9,7 @@ use c::{
     },
     QStatus,
 };
-use windows_core::{Result, PCSTR};
+use windows_core::PCSTR;
 
 struct ApiInner {
     inner: *const QUIC_API_TABLE,
@@ -94,15 +94,15 @@ impl Api {
         }
     }
 
-    pub fn registration_open(&self, config: &RegistrationConfig) -> Result<Handle> {
+    pub fn registration_open(&self, config: &RegistrationConfig) -> std::io::Result<Handle> {
         let arg = QUIC_REGISTRATION_CONFIG {
-            AppName: PCSTR(config.app_name.as_ptr()),
+            AppName: PCSTR(config.app_name.as_ptr() as *const u8),
             ExecutionProfile: config.execution_profile.into(),
         };
         let f = self.api.get_api().RegistrationOpen.unwrap();
         let mut h = Handle::default();
         let hr = unsafe { f(&arg, h.put()) };
-        QStatus::from_raw(hr).unwrap();
+        QStatus::error_from_raw(hr)?;
         assert_ne!(h.h, HQUIC::default());
         Ok(h)
     }
@@ -145,7 +145,8 @@ impl From<ExecutionProfile> for QUIC_EXECUTION_PROFILE {
 }
 
 pub struct RegistrationConfig {
-    app_name: String,
+    // note that rust string is not null terminated so cstring is used.
+    app_name: std::ffi::CString,
     execution_profile: ExecutionProfile,
 }
 
@@ -153,6 +154,8 @@ pub struct Settings {}
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::CString;
+
     use crate::{Api, RegistrationConfig};
 
     #[test]
@@ -160,7 +163,7 @@ mod tests {
         let api = Api::new();
 
         let config = RegistrationConfig {
-            app_name: "testapp".to_string(),
+            app_name: CString::new("testapp").unwrap(),
             execution_profile: crate::ExecutionProfile::LowLatency,
         };
 

@@ -21,10 +21,7 @@ FetchContent_Declare(
   URL ${release_url}
 )
 
-FetchContent_GetProperties(msquic_release)
-if(NOT msquic_release_POPULATED)
-  FetchContent_Populate(msquic_release)
-endif()
+FetchContent_MakeAvailable(msquic_release)
 
 if(WIN32)
 # generate winmd. defer generation task in .metadata csproj.
@@ -64,15 +61,22 @@ add_custom_target(generate_rust
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-else()
+else(WIN32)
   file(GLOB _msquic_dll 
     ${msquic_release_SOURCE_DIR}/bin/libmsquic.so.*
   )
   # create a sym link
   execute_process(
+    # for build
     COMMAND ln -sf ${_msquic_dll} ${CMAKE_BINARY_DIR}/libmsquic.so # for linking
     COMMAND ln -sf ${_msquic_dll} ${CMAKE_BINARY_DIR}/libmsquic.so.2 # for loading at runtime
+    # for run
+    COMMAND mkdir -p ${CMAKE_SOURCE_DIR}/target/debug/deps
+    COMMAND cp ${_msquic_dll} ${CMAKE_SOURCE_DIR}/target/debug/libmsquic.so.2
+    COMMAND cp ${_msquic_dll} ${CMAKE_SOURCE_DIR}/target/debug/deps/libmsquic.so.2
   )
+  # copy files to output dir
+  # file(COPY ${_msquic_dll} DESTINATION ${CMAKE_SOURCE_DIR}/target/debug)
 endif(WIN32)
 
 # downloading the msquic rust manual bindings.
@@ -84,6 +88,7 @@ endif(WIN32)
 #   TLS_VERIFY ON
 # )
 
+if(WIN32)
 # generate cert on windows:
 find_program(pwsh_exe
   NAMES pwsh.exe
@@ -108,3 +113,4 @@ if(TEST_CERT_HASH STREQUAL "")
 endif()
   
 message(STATUS "Using TEST_CERT_HASH ${TEST_CERT_HASH}")
+endif(WIN32)

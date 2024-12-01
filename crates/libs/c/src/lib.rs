@@ -18,4 +18,10 @@ extern crate mssf_pal;
 
 #[cfg(target_os = "windows")]
 mod win_status;
+#[cfg(target_os = "windows")]
 pub use win_status::*;
+
+#[cfg(target_os = "linux")]
+mod unix_status;
+#[cfg(target_os = "linux")]
+pub use unix_status::*;

@@ -84,8 +84,10 @@ mod tests {
 
         let api = QApi::default();
 
+        let app_name = std::ffi::CString::new("testapp").unwrap();
+
         let config = RegistrationConfig {
-            app_name: "testapp".as_ptr() as *const i8,
+            app_name: app_name.as_ptr(),
             execution_profile: EXECUTION_PROFILE_LOW_LATENCY,
         };
         let q_reg = QRegistration::new(&api, &config);
