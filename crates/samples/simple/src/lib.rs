@@ -1,10 +1,13 @@
 use std::{ffi::c_void, sync::Arc};
 
-use c::Microsoft::MsQuic::{
-    MsQuicClose, MsQuicOpenVersion, HQUIC, QUIC_API_TABLE, QUIC_API_VERSION_2,
-    QUIC_EXECUTION_PROFILE, QUIC_EXECUTION_PROFILE_LOW_LATENCY,
-    QUIC_EXECUTION_PROFILE_TYPE_MAX_THROUGHPUT, QUIC_EXECUTION_PROFILE_TYPE_REAL_TIME,
-    QUIC_EXECUTION_PROFILE_TYPE_SCAVENGER, QUIC_HANDLE, QUIC_REGISTRATION_CONFIG,
+use c::{
+    Microsoft::MsQuic::{
+        MsQuicClose, MsQuicOpenVersion, HQUIC, QUIC_API_TABLE, QUIC_API_VERSION_2,
+        QUIC_EXECUTION_PROFILE, QUIC_EXECUTION_PROFILE_LOW_LATENCY,
+        QUIC_EXECUTION_PROFILE_TYPE_MAX_THROUGHPUT, QUIC_EXECUTION_PROFILE_TYPE_REAL_TIME,
+        QUIC_EXECUTION_PROFILE_TYPE_SCAVENGER, QUIC_HANDLE, QUIC_REGISTRATION_CONFIG,
+    },
+    QStatus,
 };
 use windows_core::{Result, PCSTR};
 
@@ -21,13 +24,13 @@ impl ApiInner {
             inner: std::ptr::null(),
         };
 
-        unsafe {
+        let ec = unsafe {
             MsQuicOpenVersion(
                 QUIC_API_VERSION_2,
                 std::ptr::addr_of_mut!(ret.inner) as *mut *mut c_void,
             )
-        }
-        .unwrap();
+        };
+        c::QStatus::from_raw(ec).unwrap();
         assert_ne!(ret.inner, std::ptr::null());
         ret
     }
@@ -99,7 +102,7 @@ impl Api {
         let f = self.api.get_api().RegistrationOpen.unwrap();
         let mut h = Handle::default();
         let hr = unsafe { f(&arg, h.put()) };
-        hr.ok()?;
+        QStatus::from_raw(hr).unwrap();
         assert_ne!(h.h, HQUIC::default());
         Ok(h)
     }

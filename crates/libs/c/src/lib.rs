@@ -15,3 +15,7 @@ pub mod Microsoft;
 extern crate mssf_pal;
 
 //#![link_args = "-Wl,-rpath /path/to/c_lib"]
+
+#[cfg(target_os = "windows")]
+mod win_status;
+pub use win_status::*;

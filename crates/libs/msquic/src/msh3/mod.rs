@@ -267,8 +267,6 @@ mod tests {
     fn basic_test() {
         let _ = tracing_subscriber::fmt().try_init();
         info!("Test start");
-        let cert_hash = crate::tests::get_test_cert_hash();
-        info!("Using cert_hash: [{cert_hash}]");
 
         let api = QApi::default();
 

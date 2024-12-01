@@ -17,18 +17,12 @@ pub mod MsQuic {
         MsQuicClose(quicapi)
     }
     #[inline]
-    pub unsafe fn MsQuicOpenVersion(
-        version: u32,
-        quicapi: *mut *mut core::ffi::c_void,
-    ) -> windows_core::Result<()> {
+    pub unsafe fn MsQuicOpenVersion(version: u32, quicapi: *mut *mut core::ffi::c_void) -> i32 {
         #[link(name = "msquic")]
         extern "system" {
-            pub fn MsQuicOpenVersion(
-                version: u32,
-                quicapi: *mut *mut core::ffi::c_void,
-            ) -> windows_core::HRESULT;
+            pub fn MsQuicOpenVersion(version: u32, quicapi: *mut *mut core::ffi::c_void) -> i32;
         }
-        MsQuicOpenVersion(version, quicapi).ok()
+        MsQuicOpenVersion(version, quicapi)
     }
     pub const QUIC_ALLOWED_CIPHER_SUITE_AES_128_GCM_SHA256: QUIC_ALLOWED_CIPHER_SUITE_FLAGS =
         QUIC_ALLOWED_CIPHER_SUITE_FLAGS(1i32);
@@ -234,6 +228,7 @@ pub mod MsQuic {
     pub const QUIC_PARAM_GLOBAL_SUPPORTED_VERSIONS: u32 = 16777217u32;
     pub const QUIC_PARAM_GLOBAL_TLS_PROVIDER: u32 = 16777226u32;
     pub const QUIC_PARAM_GLOBAL_VERSION_SETTINGS: u32 = 16777223u32;
+    pub const QUIC_PARAM_HIGH_PRIORITY: u32 = 1073741824u32;
     pub const QUIC_PARAM_LISTENER_CIBIR_ID: u32 = 67108866u32;
     pub const QUIC_PARAM_LISTENER_LOCAL_ADDRESS: u32 = 67108864u32;
     pub const QUIC_PARAM_LISTENER_STATS: u32 = 67108865u32;
@@ -270,6 +265,8 @@ pub mod MsQuic {
         QUIC_PERFORMANCE_COUNTERS(0i32);
     pub const QUIC_PERF_COUNTER_CONN_HANDSHAKE_FAIL: QUIC_PERFORMANCE_COUNTERS =
         QUIC_PERFORMANCE_COUNTERS(1i32);
+    pub const QUIC_PERF_COUNTER_CONN_LOAD_REJECT: QUIC_PERFORMANCE_COUNTERS =
+        QUIC_PERFORMANCE_COUNTERS(31i32);
     pub const QUIC_PERF_COUNTER_CONN_NO_ALPN: QUIC_PERFORMANCE_COUNTERS =
         QUIC_PERFORMANCE_COUNTERS(7i32);
     pub const QUIC_PERF_COUNTER_CONN_OPER_COMPLETED: QUIC_PERFORMANCE_COUNTERS =
@@ -284,7 +281,7 @@ pub mod MsQuic {
         QUIC_PERFORMANCE_COUNTERS(20i32);
     pub const QUIC_PERF_COUNTER_CONN_RESUMED: QUIC_PERFORMANCE_COUNTERS =
         QUIC_PERFORMANCE_COUNTERS(3i32);
-    pub const QUIC_PERF_COUNTER_MAX: QUIC_PERFORMANCE_COUNTERS = QUIC_PERFORMANCE_COUNTERS(31i32);
+    pub const QUIC_PERF_COUNTER_MAX: QUIC_PERFORMANCE_COUNTERS = QUIC_PERFORMANCE_COUNTERS(32i32);
     pub const QUIC_PERF_COUNTER_PATH_FAILURE: QUIC_PERFORMANCE_COUNTERS =
         QUIC_PERFORMANCE_COUNTERS(28i32);
     pub const QUIC_PERF_COUNTER_PATH_VALIDATED: QUIC_PERFORMANCE_COUNTERS =
@@ -328,6 +325,7 @@ pub mod MsQuic {
     pub const QUIC_SEND_FLAG_DGRAM_PRIORITY: QUIC_SEND_FLAGS = QUIC_SEND_FLAGS(8i32);
     pub const QUIC_SEND_FLAG_FIN: QUIC_SEND_FLAGS = QUIC_SEND_FLAGS(4i32);
     pub const QUIC_SEND_FLAG_NONE: QUIC_SEND_FLAGS = QUIC_SEND_FLAGS(0i32);
+    pub const QUIC_SEND_FLAG_PRIORITY_WORK: QUIC_SEND_FLAGS = QUIC_SEND_FLAGS(64i32);
     pub const QUIC_SEND_FLAG_START: QUIC_SEND_FLAGS = QUIC_SEND_FLAGS(2i32);
     pub const QUIC_SEND_RESUMPTION_FLAG_FINAL: QUIC_SEND_RESUMPTION_FLAGS =
         QUIC_SEND_RESUMPTION_FLAGS(1i32);
@@ -394,6 +392,8 @@ pub mod MsQuic {
     pub const QUIC_STREAM_START_FLAG_INDICATE_PEER_ACCEPT: QUIC_STREAM_START_FLAGS =
         QUIC_STREAM_START_FLAGS(8i32);
     pub const QUIC_STREAM_START_FLAG_NONE: QUIC_STREAM_START_FLAGS = QUIC_STREAM_START_FLAGS(0i32);
+    pub const QUIC_STREAM_START_FLAG_PRIORITY_WORK: QUIC_STREAM_START_FLAGS =
+        QUIC_STREAM_START_FLAGS(16i32);
     pub const QUIC_STREAM_START_FLAG_SHUTDOWN_ON_FAIL: QUIC_STREAM_START_FLAGS =
         QUIC_STREAM_START_FLAGS(4i32);
     pub const QUIC_TLS_ALERT_CODE_ACCESS_DENIED: QUIC_TLS_ALERT_CODES = QUIC_TLS_ALERT_CODES(49i32);
@@ -1447,7 +1447,7 @@ pub mod MsQuic {
     pub struct QUIC_CONNECTION_EVENT_0_7 {
         pub Certificate: *mut core::ffi::c_void,
         pub DeferredErrorFlags: u32,
-        pub DeferredStatus: windows_core::HRESULT,
+        pub DeferredStatus: i32,
         pub Chain: *mut core::ffi::c_void,
     }
     impl windows_core::TypeKind for QUIC_CONNECTION_EVENT_0_7 {
@@ -1542,7 +1542,7 @@ pub mod MsQuic {
     #[repr(C)]
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct QUIC_CONNECTION_EVENT_0_14 {
-        pub Status: windows_core::HRESULT,
+        pub Status: i32,
         pub ErrorCode: u64,
     }
     impl windows_core::TypeKind for QUIC_CONNECTION_EVENT_0_14 {
@@ -2232,7 +2232,7 @@ pub mod MsQuic {
         pub ConnectionShutdown: windows::Win32::Foundation::BOOLEAN,
         pub _bitfield: u8,
         pub ConnectionErrorCode: u64,
-        pub ConnectionCloseStatus: windows_core::HRESULT,
+        pub ConnectionCloseStatus: i32,
     }
     impl windows_core::TypeKind for QUIC_STREAM_EVENT_0_7 {
         type TypeKind = windows_core::CopyType;
@@ -2245,7 +2245,7 @@ pub mod MsQuic {
     #[repr(C)]
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub struct QUIC_STREAM_EVENT_0_8 {
-        pub Status: windows_core::HRESULT,
+        pub Status: i32,
         pub ID: u64,
         pub _bitfield: u8,
     }
@@ -2327,10 +2327,7 @@ pub mod MsQuic {
     }
     pub type MsQuicCloseFn = Option<unsafe extern "system" fn(quicapi: *const core::ffi::c_void)>;
     pub type MsQuicOpenVersionFn = Option<
-        unsafe extern "system" fn(
-            version: u32,
-            quicapi: *mut *mut core::ffi::c_void,
-        ) -> windows_core::HRESULT,
+        unsafe extern "system" fn(version: u32, quicapi: *mut *mut core::ffi::c_void) -> i32,
     >;
     pub type QUIC_CONFIGURATION_CLOSE_FN =
         Option<unsafe extern "system" fn(configuration: *const QUIC_HANDLE)>;
@@ -2338,7 +2335,7 @@ pub mod MsQuic {
         unsafe extern "system" fn(
             configuration: *const QUIC_HANDLE,
             credconfig: *const QUIC_CREDENTIAL_CONFIG,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_CONFIGURATION_OPEN_FN = Option<
         unsafe extern "system" fn(
@@ -2349,17 +2346,16 @@ pub mod MsQuic {
             settingssize: u32,
             context: *const core::ffi::c_void,
             configuration: *mut *mut QUIC_HANDLE,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_CONNECTION_CALLBACK = Option<
         unsafe extern "system" fn(
             connection: *const QUIC_HANDLE,
             context: *const core::ffi::c_void,
             event: *mut QUIC_CONNECTION_EVENT,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
-    pub type QUIC_CONNECTION_CALLBACK_HANDLER =
-        Option<unsafe extern "system" fn() -> windows_core::HRESULT>;
+    pub type QUIC_CONNECTION_CALLBACK_HANDLER = Option<unsafe extern "system" fn() -> i32>;
     pub type QUIC_CONNECTION_CLOSE_FN =
         Option<unsafe extern "system" fn(connection: *const QUIC_HANDLE)>;
     pub type QUIC_CONNECTION_COMP_CERT_FN = Option<
@@ -2367,13 +2363,13 @@ pub mod MsQuic {
             connection: *const QUIC_HANDLE,
             result: windows::Win32::Foundation::BOOLEAN,
             tlsalert: QUIC_TLS_ALERT_CODES,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_CONNECTION_COMP_RESUMPTION_FN = Option<
         unsafe extern "system" fn(
             connection: *const QUIC_HANDLE,
             result: windows::Win32::Foundation::BOOLEAN,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_CONNECTION_OPEN_FN = Option<
         unsafe extern "system" fn(
@@ -2381,7 +2377,7 @@ pub mod MsQuic {
             handler: QUIC_CONNECTION_CALLBACK_HANDLER,
             context: *const core::ffi::c_void,
             connection: *mut *mut QUIC_HANDLE,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_CONNECTION_SEND_RESUMPTION_FN = Option<
         unsafe extern "system" fn(
@@ -2389,13 +2385,13 @@ pub mod MsQuic {
             flags: QUIC_SEND_RESUMPTION_FLAGS,
             datalength: u16,
             resumptiondata: *const u8,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_CONNECTION_SET_CONFIGURATION_FN = Option<
         unsafe extern "system" fn(
             connection: *const QUIC_HANDLE,
             configuration: *const QUIC_HANDLE,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_CONNECTION_SHUTDOWN_FN = Option<
         unsafe extern "system" fn(
@@ -2411,13 +2407,13 @@ pub mod MsQuic {
             family: u16,
             servername: windows_core::PCSTR,
             serverport: u16,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_CREDENTIAL_LOAD_COMPLETE = Option<
         unsafe extern "system" fn(
             configuration: *const QUIC_HANDLE,
             context: *const core::ffi::c_void,
-            status: windows_core::HRESULT,
+            status: i32,
         ),
     >;
     pub type QUIC_CREDENTIAL_LOAD_COMPLETE_HANDLER = Option<unsafe extern "system" fn()>;
@@ -2428,7 +2424,7 @@ pub mod MsQuic {
             buffercount: u32,
             flags: QUIC_SEND_FLAGS,
             clientsendcontext: *const core::ffi::c_void,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_GET_CONTEXT_FN =
         Option<unsafe extern "system" fn(handle: *const QUIC_HANDLE) -> *mut core::ffi::c_void>;
@@ -2438,17 +2434,16 @@ pub mod MsQuic {
             param: u32,
             bufferlength: *mut u32,
             buffer: *mut core::ffi::c_void,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_LISTENER_CALLBACK = Option<
         unsafe extern "system" fn(
             listener: *const QUIC_HANDLE,
             context: *const core::ffi::c_void,
             event: *mut QUIC_LISTENER_EVENT,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
-    pub type QUIC_LISTENER_CALLBACK_HANDLER =
-        Option<unsafe extern "system" fn() -> windows_core::HRESULT>;
+    pub type QUIC_LISTENER_CALLBACK_HANDLER = Option<unsafe extern "system" fn() -> i32>;
     pub type QUIC_LISTENER_CLOSE_FN =
         Option<unsafe extern "system" fn(listener: *const QUIC_HANDLE)>;
     pub type QUIC_LISTENER_OPEN_FN = Option<
@@ -2457,7 +2452,7 @@ pub mod MsQuic {
             handler: QUIC_LISTENER_CALLBACK_HANDLER,
             context: *const core::ffi::c_void,
             listener: *mut *mut QUIC_HANDLE,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_LISTENER_START_FN = Option<
         unsafe extern "system" fn(
@@ -2465,7 +2460,7 @@ pub mod MsQuic {
             alpnbuffers: *const QUIC_BUFFER,
             alpnbuffercount: u32,
             localaddress: *const windows::Win32::Networking::WinSock::SOCKADDR_INET,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_LISTENER_STOP_FN =
         Option<unsafe extern "system" fn(listener: *const QUIC_HANDLE)>;
@@ -2475,7 +2470,7 @@ pub mod MsQuic {
         unsafe extern "system" fn(
             config: *const QUIC_REGISTRATION_CONFIG,
             registration: *mut *mut QUIC_HANDLE,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_REGISTRATION_SHUTDOWN_FN = Option<
         unsafe extern "system" fn(
@@ -2500,17 +2495,16 @@ pub mod MsQuic {
             param: u32,
             bufferlength: u32,
             buffer: *const core::ffi::c_void,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_STREAM_CALLBACK = Option<
         unsafe extern "system" fn(
             stream: *const QUIC_HANDLE,
             context: *const core::ffi::c_void,
             event: *mut QUIC_STREAM_EVENT,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
-    pub type QUIC_STREAM_CALLBACK_HANDLER =
-        Option<unsafe extern "system" fn() -> windows_core::HRESULT>;
+    pub type QUIC_STREAM_CALLBACK_HANDLER = Option<unsafe extern "system" fn() -> i32>;
     pub type QUIC_STREAM_CLOSE_FN = Option<unsafe extern "system" fn(stream: *const QUIC_HANDLE)>;
     pub type QUIC_STREAM_OPEN_FN = Option<
         unsafe extern "system" fn(
@@ -2519,7 +2513,7 @@ pub mod MsQuic {
             handler: QUIC_STREAM_CALLBACK_HANDLER,
             context: *const core::ffi::c_void,
             stream: *mut *mut QUIC_HANDLE,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_STREAM_RECEIVE_COMPLETE_FN =
         Option<unsafe extern "system" fn(stream: *const QUIC_HANDLE, bufferlength: u64)>;
@@ -2527,7 +2521,7 @@ pub mod MsQuic {
         unsafe extern "system" fn(
             stream: *const QUIC_HANDLE,
             isenabled: windows::Win32::Foundation::BOOLEAN,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_STREAM_SEND_FN = Option<
         unsafe extern "system" fn(
@@ -2536,19 +2530,19 @@ pub mod MsQuic {
             buffercount: u32,
             flags: QUIC_SEND_FLAGS,
             clientsendcontext: *const core::ffi::c_void,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_STREAM_SHUTDOWN_FN = Option<
         unsafe extern "system" fn(
             stream: *const QUIC_HANDLE,
             flags: QUIC_STREAM_SHUTDOWN_FLAGS,
             errorcode: u64,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
     pub type QUIC_STREAM_START_FN = Option<
         unsafe extern "system" fn(
             stream: *const QUIC_HANDLE,
             flags: QUIC_STREAM_START_FLAGS,
-        ) -> windows_core::HRESULT,
+        ) -> i32,
     >;
 }
