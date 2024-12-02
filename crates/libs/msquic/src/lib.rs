@@ -4,8 +4,6 @@ use c2::Api;
 
 use utils::SBox;
 
-pub use tracing::info;
-
 pub mod buffer;
 pub mod config;
 pub mod conn;
@@ -34,6 +32,15 @@ impl Default for QApi {
     }
 }
 
+// macro for enabling tracing for internals.
+macro_rules! trace {
+    ($($rest:tt)*) => {
+        #[cfg(feature = "trace")]
+        tracing::trace!($($rest)*)
+    }
+}
+pub(crate) use trace;
+
 #[cfg(test)]
 mod tests {
 
@@ -58,7 +65,7 @@ mod tests {
         QApi,
     };
 
-    use super::info;
+    use tracing::info;
 
     pub fn get_test_cert_hash() -> String {
         let output = Command::new("pwsh.exe")
@@ -75,9 +82,18 @@ mod tests {
         s
     }
 
+    // used for debugging
+    pub const DEVEL_TRACE_LEVEL: tracing::Level = tracing::Level::TRACE;
+
+    pub fn try_setup_tracing() {
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(crate::tests::DEVEL_TRACE_LEVEL)
+            .try_init();
+    }
+
     #[test]
     fn basic_test() {
-        let _ = tracing_subscriber::fmt().try_init();
+        try_setup_tracing();
         info!("Test start");
         let cert_hash = get_test_cert_hash();
         info!("Using cert_hash: [{cert_hash}]");

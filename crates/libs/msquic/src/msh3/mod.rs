@@ -8,7 +8,6 @@ use c2::{
     STREAM_SHUTDOWN_FLAG_GRACEFUL,
 };
 use h3::quic::{BidiStream, Connection, OpenStreams, RecvStream, SendStream};
-use tracing::info;
 
 use crate::{conn::QConnection, stream::QStream};
 
@@ -124,8 +123,9 @@ impl<B: Buf> OpenStreams<B> for H3Conn {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<Self::BidiStream, Self::OpenError>> {
+        #[allow(clippy::let_and_return)]
         let res = Self::poll_open_inner(&mut self.bidi, &self.inner, STREAM_OPEN_FLAG_NONE, cx);
-        info!("msh3 conn poll_open_bidi: {res:?}");
+        crate::trace!("msh3 conn poll_open_bidi: {res:?}");
         res
     }
 
@@ -133,18 +133,19 @@ impl<B: Buf> OpenStreams<B> for H3Conn {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<Self::SendStream, Self::OpenError>> {
+        #[warn(clippy::let_and_return)]
         let res = Self::poll_open_inner(
             &mut self.send,
             &self.inner,
             STREAM_OPEN_FLAG_UNIDIRECTIONAL,
             cx,
         );
-        info!("msh3 conn poll_open_send: {res:?}");
+        crate::trace!("msh3 conn poll_open_send: {res:?}");
         res
     }
 
     fn close(&mut self, code: h3::error::Code, _reason: &[u8]) {
-        info!("msh3 conn close");
+        crate::trace!("msh3 conn close");
         let lk = self.inner.as_ref().lock().unwrap();
         lk.shutdown_only(code.value())
     }
@@ -164,8 +165,9 @@ impl<B: Buf> Connection<B> for H3Conn {
     ) -> std::task::Poll<Result<Option<Self::RecvStream>, Self::AcceptError>> {
         let mut lk = self.inner.as_ref().lock().unwrap();
         // TODO: propogate error.
+        #[warn(clippy::let_and_return)]
         let res = lk.poll_accept_uni(cx).map(|x| Ok(x.map(H3Stream::new)));
-        info!("msh3 conn poll_accept_recv: {res:?}");
+        crate::trace!("msh3 conn poll_accept_recv: {res:?}");
         res
     }
 
@@ -175,14 +177,15 @@ impl<B: Buf> Connection<B> for H3Conn {
     ) -> std::task::Poll<Result<Option<Self::BidiStream>, Self::AcceptError>> {
         let mut lk = self.inner.as_ref().lock().unwrap();
         // TODO: propogate error.
+        #[warn(clippy::let_and_return)]
         let res = lk.poll_accept(cx).map(|x| Ok(x.map(H3Stream::new)));
-        info!("msh3 conn poll_accept_bidi {res:?}");
+        crate::trace!("msh3 conn poll_accept_bidi {res:?}");
         res
     }
 
     /// Object to create new streams.
     fn opener(&self) -> Self::OpenStreams {
-        info!("msh3 conn opener");
+        crate::trace!("msh3 conn opener");
         self.clone()
     }
 }
@@ -209,6 +212,7 @@ impl H3Stream {
         &self.inner
     }
 
+    #[allow(dead_code)]
     fn get_handle(&self) -> String {
         format!("{:?}", self.get_ref().get_ref().handle)
     }
@@ -221,16 +225,17 @@ impl<B: Buf> SendStream<B> for H3Stream {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<(), Self::Error>> {
+        #[warn(clippy::let_and_return)]
         let res = self
             .inner
             .poll_ready_send(cx)
             .map_err(|e| H3Error::new(e, None));
-        info!("msh3 stream [{}] poll_ready {res:?}", self.get_handle());
+        crate::trace!("msh3 stream [{}] poll_ready {res:?}", self.get_handle());
         res
     }
 
     fn send_data<T: Into<h3::quic::WriteBuf<B>>>(&mut self, data: T) -> Result<(), Self::Error> {
-        info!("msh3 stream [{}] send_data ok", self.get_handle());
+        crate::trace!("msh3 stream [{}] send_data ok", self.get_handle());
         let b: h3::quic::WriteBuf<B> = data.into();
         self.inner.send_only(b, SEND_FLAG_NONE);
         Ok(())
@@ -248,12 +253,12 @@ impl<B: Buf> SendStream<B> for H3Stream {
             self.shutdown = true;
         }
         // Does not need to poll? Seems like quinn does not poll this.
-        let res = self
+        let _res = self
             .inner
             .poll_shutdown(cx)
             .map_err(|e| H3Error::new(e, None));
-        info!(
-            "msh3 stream [{}] poll_finish do work ok: {do_work}, {res:?}",
+        crate::trace!(
+            "msh3 stream [{}] poll_finish do work ok: {do_work}, {_res:?}",
             self.get_handle()
         );
         Poll::Ready(Ok(()))
@@ -278,16 +283,21 @@ impl RecvStream for H3Stream {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<Option<Self::Buf>, Self::Error>> {
+        #[warn(clippy::let_and_return)]
         let res = match self.inner.poll_receive(cx) {
             std::task::Poll::Ready(br) => Poll::Ready(Ok(br)),
             std::task::Poll::Pending => Poll::Pending,
         };
-        info!("msh3 stream [{}] poll_data {res:?}", self.get_handle());
+        crate::trace!(
+            "msh3 stream [{}] poll_data pending:{}",
+            self.get_handle(),
+            res.is_pending()
+        );
         res
     }
 
     fn stop_sending(&mut self, error_code: u64) {
-        info!("msh3 stream [{}] stop_sending ok", self.get_handle());
+        crate::trace!("msh3 stream [{}] stop_sending ok", self.get_handle());
         self.inner.stop_sending(error_code);
     }
 

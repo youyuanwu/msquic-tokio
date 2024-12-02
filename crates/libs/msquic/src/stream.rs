@@ -11,7 +11,6 @@ use std::{
 use crate::{
     buffer::{QBufWrap, QBytesMut},
     conn::QConnection,
-    info,
     sync::{QSignal, QWakableSig},
     utils::SBox,
     QApi, QUIC_STATUS_SUCCESS,
@@ -104,7 +103,7 @@ impl QStreamCtx {
         let v = QBytesMut::from_buffs(buffs);
         // let s = debug_buf_to_string(v.0.clone());
         // let original = debug_raw_buf_to_string(buffs[0]);
-        // info!(
+        // crate::trace!(
         //     "debug: receive bytes: {} len:{}, original {}, len: {}",
         //     s,
         //     s.len(),
@@ -161,14 +160,15 @@ extern "C" fn qstream_handler_callback(
 
     match event.event_type {
         STREAM_EVENT_START_COMPLETE => {
-            info!("[{:?}] STREAM_EVENT_START_COMPLETE", stream);
+            crate::trace!("[{:?}] STREAM_EVENT_START_COMPLETE", stream);
             ctx.on_start_complete();
         }
         STREAM_EVENT_SEND_COMPLETE => {
             let raw = unsafe { event.payload.send_complete };
-            info!(
+            crate::trace!(
                 "[{:?}] STREAM_EVENT_SEND_COMPLETE cancel {}",
-                stream, raw.canceled
+                stream,
+                raw.canceled
             );
             ctx.on_send_complete(raw.canceled);
         }
@@ -177,7 +177,7 @@ extern "C" fn qstream_handler_callback(
             let count = raw.buffer_count;
             let curr = raw.buffer;
             let buffs = unsafe { slice::from_raw_parts(curr, count.try_into().unwrap()) };
-            info!(
+            crate::trace!(
                 "[{:?}] QUIC_STREAM_EVENT_RECEIVE: buffer count {}",
                 stream,
                 buffs.len(),
@@ -185,31 +185,32 @@ extern "C" fn qstream_handler_callback(
             ctx.on_receive(buffs);
         }
         STREAM_EVENT_PEER_SEND_SHUTDOWN => {
-            info!("[{:?}] STREAM_EVENT_PEER_SEND_SHUTDOWN", stream);
+            crate::trace!("[{:?}] STREAM_EVENT_PEER_SEND_SHUTDOWN", stream);
             ctx.on_peer_send_shutdown();
         }
         STREAM_EVENT_PEER_SEND_ABORTED => {
             let raw = unsafe { event.payload.peer_send_aborted };
-            info!(
+            crate::trace!(
                 "[{:?}] STREAM_EVENT_PEER_SEND_ABORTED: ec {}",
-                stream, raw.error_code
+                stream,
+                raw.error_code
             );
             ctx.on_peer_send_abort(raw.error_code);
         }
         STREAM_EVENT_SEND_SHUTDOWN_COMPLETE => {
-            info!("[{:?}] STREAM_EVENT_SEND_SHUTDOWN_COMPLETE", stream);
+            crate::trace!("[{:?}] STREAM_EVENT_SEND_SHUTDOWN_COMPLETE", stream);
             ctx.on_send_shutdown_complete();
         }
         STREAM_EVENT_SHUTDOWN_COMPLETE => {
-            info!("[{:?}] STREAM_EVENT_SHUTDOWN_COMPLETE", stream);
+            crate::trace!("[{:?}] STREAM_EVENT_SHUTDOWN_COMPLETE", stream);
             ctx.on_shutdown_complete();
         }
         STREAM_EVENT_PEER_RECEIVE_ABORTED => {
             // can ignore for now
-            info!("[{:?}] STREAM_EVENT_PEER_RECEIVE_ABORTED", stream);
+            crate::trace!("[{:?}] STREAM_EVENT_PEER_RECEIVE_ABORTED", stream);
         }
         _ => {
-            info!("[{:?}] STREAM_EVENT Unknown {}", stream, event.event_type);
+            crate::trace!("[{:?}] STREAM_EVENT Unknown {}", stream, event.event_type);
         }
     }
     status
@@ -410,8 +411,8 @@ impl QStream {
 impl Drop for QStream {
     // force to wait stream shutdown. TODO:
     fn drop(&mut self) {
-        let h = self.inner.inner.handle;
-        tracing::info!("Stream drop [{:?}]", h);
+        let _h = self.inner.inner.handle;
+        crate::trace!("Stream drop [{:?}]", _h);
         // let lk = self.ctx.lock().unwrap();
         // if !lk.is_drained{
         //     panic!("drop happens before shutdown callback");

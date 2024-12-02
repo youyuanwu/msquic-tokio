@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::{conn::QConnection, info};
+use crate::conn::QConnection;
 use c2::{
     Addr, Buffer, Configuration, Handle, Listener, ListenerEvent, LISTENER_EVENT_NEW_CONNECTION,
 };
@@ -35,7 +35,7 @@ enum State {
 const QUIC_LISTENER_EVENT_STOP_COMPLETE: u32 = 1;
 
 extern "C" fn listener_handler(
-    listener: Handle,
+    _listener: Handle,
     context: *mut c_void,
     event: &ListenerEvent,
 ) -> u32 {
@@ -49,16 +49,18 @@ extern "C" fn listener_handler(
         LISTENER_EVENT_NEW_CONNECTION => {
             let raw = unsafe { event.payload.new_connection };
             let h = raw.connection as Handle;
-            let info = unsafe { raw.info.as_ref().unwrap() };
-            info!(
+            let _info = unsafe { raw.info.as_ref().unwrap() };
+            crate::trace!(
                 "[{:?}] LISTENER_EVENT_NEW_CONNECTION conn=[{:?}] info={:?}",
-                listener, h, info
+                _listener,
+                h,
+                _info
             );
             assert_eq!(ctx.state, State::Started);
             ctx.on_new_connection(h);
         }
         QUIC_LISTENER_EVENT_STOP_COMPLETE => {
-            info!("[{:?}] QUIC_LISTENER_EVENT_STOP_COMPLETE", listener);
+            crate::trace!("[{:?}] QUIC_LISTENER_EVENT_STOP_COMPLETE", _listener);
             assert_eq!(ctx.state, State::StopRequested);
             ctx.state = State::Stopped;
             // stop the acceptor
@@ -115,13 +117,13 @@ impl QListener {
             lk.state = State::StopRequested;
         }
         // callback may be invoked in the same thread.
-        info!("listner stop requested.");
+        crate::trace!("listner stop requested.");
         self.inner.inner.stop();
-        info!("wait for mpsc sender to drop");
+        crate::trace!("wait for mpsc sender to drop");
         while !self.ch_rx.is_closed() {
             tokio::task::yield_now().await;
         }
-        info!("wait for mpsc sender to drop ok.");
+        crate::trace!("wait for mpsc sender to drop ok.");
     }
 }
 

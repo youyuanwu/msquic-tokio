@@ -188,6 +188,8 @@ impl QBufWrap {
 pub struct QBytesMut(pub BytesMut);
 
 impl QBytesMut {
+    // Copies raw data into Buf.
+    // MsQuic buffer copy into there should happen once in the lifetime of the data.
     pub fn from_buffs(b: &[Buffer]) -> Self {
         let mut res = BytesMut::new();
         b.iter().for_each(|i| {

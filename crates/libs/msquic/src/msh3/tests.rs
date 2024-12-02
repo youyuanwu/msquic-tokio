@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use bytes::Buf;
 use c2::{
     CertificateHash, CertificateUnion, CredentialConfig, RegistrationConfig, Settings,
@@ -18,12 +16,13 @@ use crate::{
     QApi,
 };
 
-// send requeset to dest uri
-fn send_get_request(uri: Uri) {
+/// Send a GET request to target server.
+async fn send_get_request(uri: Uri) {
     let api = QApi::default();
 
+    let app_name = std::ffi::CString::new("testapp").unwrap();
     let config = RegistrationConfig {
-        app_name: "testapp".as_ptr() as *const i8,
+        app_name: app_name.as_ptr() as *const i8,
         execution_profile: EXECUTION_PROFILE_LOW_LATENCY,
     };
     let q_reg = QRegistration::new(&api, &config);
@@ -44,116 +43,111 @@ fn send_get_request(uri: Uri) {
         client_config.load_cred(&cred_config);
     }
 
-    // run client in another runtime.
+    info!("client conn open");
+    let mut conn = QConnection::open(&q_reg);
+    info!("client conn start");
+    conn.start(&client_config, uri.host().unwrap(), uri.port_u16().unwrap())
+        .await
+        .unwrap();
+
+    // tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+
+    let h_conn = H3Conn::new(conn);
+
+    let (mut driver, mut send_request) = h3::client::new(h_conn.clone()).await.unwrap();
+
+    let drive = async move {
+        std::future::poll_fn(|cx| driver.poll_close(cx)).await?;
+        Ok::<(), Box<dyn std::error::Error>>(())
+    };
+
+    // tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+    // In the following block, we want to take ownership of `send_request`:
+    // the connection will be closed only when all `SendRequest`s instances
+    // are dropped.
+    //
+    //             So we "move" it.
+    //                  vvvv
+    let request = async move {
+        info!("sending request ...");
+
+        let req = http::Request::builder().uri(uri).body(())?;
+
+        // sending request results in a bidirectional stream,
+        // which is also used for receiving response
+        let mut stream = send_request.send_request(req).await?;
+
+        // finish on the sending side
+        stream.finish().await?;
+
+        info!("receiving response ...");
+
+        let resp = stream.recv_response().await?;
+
+        info!("response: {:?} {}", resp.version(), resp.status());
+        info!("headers: {:#?}", resp.headers());
+
+        // `recv_data()` must be called after `recv_response()` for
+        // receiving potential response body
+        let mut data = vec![];
+        while let Some(mut chunk) = stream.recv_data().await? {
+            // let mut out = tokio::io::stdout();
+            // tokio::io::AsyncWriteExt::write_all_buf(&mut out, &mut chunk).await?;
+            // tokio::io::AsyncWriteExt::flush(&mut out).await?;
+            let mut dst = vec![0; chunk.remaining()];
+            chunk.copy_to_slice(&mut dst[..]);
+            data.extend_from_slice(&dst);
+        }
+        let body = String::from_utf8_lossy(&data);
+        info!("body: {}", body);
+        // tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        Ok::<_, Box<dyn std::error::Error>>(())
+    };
+
+    let (req_res, drive_res) = tokio::join!(request, drive);
+    if let Err(e) = req_res {
+        tracing::error!("req_err {e:?}");
+    }
+    if let Err(e) = drive_res {
+        tracing::error!("drive_res {e:?}");
+    }
+    info!("client ended success");
+}
+
+#[test]
+fn client_test_apache() {
+    crate::tests::try_setup_tracing();
+    // This does not work (cloudflare servers):
+    // let uri = http::Uri::from_static("https://quic.tech:8443/");
+    // let uri = http::Uri::from_static("https://cloudflare-quic.com:443/");
+    let uri = http::Uri::from_static("https://docs.trafficserver.apache.org:443/");
+    // use tokio
     tokio::runtime::Builder::new_current_thread()
         .enable_time()
         .build()
         .unwrap()
-        .block_on(async move {
-            let client_config = client_config;
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            info!("client conn open");
-            let mut conn = QConnection::open(&q_reg);
-            info!("client conn start");
-            conn.start(&client_config, uri.host().unwrap(), uri.port_u16().unwrap())
-                .await
-                .unwrap();
-
-            // tokio::time::sleep(std::time::Duration::from_millis(1)).await;
-
-            let h_conn = H3Conn::new(conn);
-
-            let (mut driver, mut send_request) = h3::client::new(h_conn.clone()).await.unwrap();
-
-            let drive = async move {
-                std::future::poll_fn(|cx| driver.poll_close(cx)).await?;
-                Ok::<(), Box<dyn std::error::Error>>(())
-            };
-
-            // tokio::time::sleep(std::time::Duration::from_millis(3)).await;
-            // In the following block, we want to take ownership of `send_request`:
-            // the connection will be closed only when all `SendRequest`s instances
-            // are dropped.
-            //
-            //             So we "move" it.
-            //                  vvvv
-            let request = async move {
-                info!("sending request ...");
-
-                let req = http::Request::builder().uri(uri).body(())?;
-
-                // sending request results in a bidirectional stream,
-                // which is also used for receiving response
-                let mut stream = send_request.send_request(req).await?;
-
-                // finish on the sending side
-                stream.finish().await?;
-
-                info!("receiving response ...");
-
-                let resp = stream.recv_response().await?;
-
-                info!("response: {:?} {}", resp.version(), resp.status());
-                info!("headers: {:#?}", resp.headers());
-
-                // `recv_data()` must be called after `recv_response()` for
-                // receiving potential response body
-                let mut data = vec![];
-                while let Some(mut chunk) = stream.recv_data().await? {
-                    // let mut out = tokio::io::stdout();
-                    // tokio::io::AsyncWriteExt::write_all_buf(&mut out, &mut chunk).await?;
-                    // tokio::io::AsyncWriteExt::flush(&mut out).await?;
-                    let mut dst = vec![0; chunk.remaining()];
-                    chunk.copy_to_slice(&mut dst[..]);
-                    data.extend_from_slice(&dst);
-                }
-                let body = String::from_utf8_lossy(&data);
-                info!("body: {}", body);
-                // tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-                Ok::<_, Box<dyn std::error::Error>>(())
-            };
-
-            let (req_res, drive_res) = tokio::join!(request, drive);
-            if let Err(e) = req_res {
-                tracing::error!("req_err {e:?}");
-            }
-            if let Err(e) = drive_res {
-                tracing::error!("drive_res {e:?}");
-            }
-            info!("client ended success");
-        });
+        .block_on(send_get_request(uri));
 }
 
 #[test]
-fn basic_test() {
-    let _ = tracing_subscriber::fmt().try_init();
-    info!("Test start");
-
+fn client_test_h2o() {
+    crate::tests::try_setup_tracing();
     let uri = http::Uri::from_static("https://h2o.examp1e.net:443");
-    send_get_request(uri);
+    // use smol runtime.
+    smol::block_on(send_get_request(uri));
 }
-
-// #[test]
-// #[ignore = "temp"]
-// fn basic_test_client() {
-//     let _ = tracing_subscriber::fmt().try_init();
-//     info!("Test start");
-
-//     let uri = http::Uri::from_static("https://localhost:4567");
-//     send_get_request(uri);
-// }
 
 #[test]
 fn basic_server_test() {
-    let _ = tracing_subscriber::fmt().try_init();
+    crate::tests::try_setup_tracing();
     info!("Test start");
     let cert_hash = crate::tests::get_test_cert_hash();
     info!("Using cert_hash: [{cert_hash}]");
 
     let api = QApi::default();
-
+    let app_name = std::ffi::CString::new("testapp").unwrap();
     let config = RegistrationConfig {
-        app_name: "testapp".as_ptr() as *const i8,
+        app_name: app_name.as_ptr() as *const i8,
         execution_profile: EXECUTION_PROFILE_LOW_LATENCY,
     };
     let q_reg = QRegistration::new(&api, &config);
@@ -293,7 +287,11 @@ fn basic_server_test() {
     // std::thread::sleep(Duration::from_secs(100));
     // send request
     let uri = http::Uri::from_static("https://localhost:4568");
-    send_get_request(uri);
+    tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap()
+        .block_on(send_get_request(uri));
     //std::thread::sleep(Duration::from_secs(1));
     sht_tx.send(()).unwrap();
     th.join().unwrap();

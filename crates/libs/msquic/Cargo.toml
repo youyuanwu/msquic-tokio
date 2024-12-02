@@ -18,3 +18,8 @@ h3 = "0.0.6"
 tokio = {version = "1", features = ["full"]}
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"]}
 http = "*"
+smol = { version = "2" }
+
+[features]
+default = []
+trace = []

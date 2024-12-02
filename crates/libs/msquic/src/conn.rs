@@ -1,12 +1,9 @@
 use crate::{
     config::QConfiguration,
-    info,
     reg::QRegistration,
     stream::QStream,
     sync::{QReceiver, QResetChannel, QWakableSig},
 };
-use std::{ffi::c_void, fmt::Debug, future::poll_fn, io::Error, sync::Mutex, task::Poll};
-
 use c2::{
     Configuration, Connection, ConnectionEvent, Handle, SendResumptionFlags,
     CONNECTION_EVENT_CONNECTED, CONNECTION_EVENT_PEER_STREAM_STARTED, CONNECTION_EVENT_RESUMED,
@@ -14,6 +11,7 @@ use c2::{
     CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER, CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT,
     CONNECTION_SHUTDOWN_FLAG_NONE, STREAM_OPEN_FLAG_UNIDIRECTIONAL,
 };
+use std::{ffi::c_void, fmt::Debug, future::poll_fn, io::Error, sync::Mutex, task::Poll};
 
 use crate::{utils::SBox, QApi};
 
@@ -61,7 +59,7 @@ struct QConnectionCtx {
 }
 
 extern "C" fn qconnection_callback_handler(
-    connection: Handle,
+    _connection: Handle,
     context: *mut c_void,
     event: &ConnectionEvent,
 ) -> u32 {
@@ -72,7 +70,7 @@ extern "C" fn qconnection_callback_handler(
     let status = 0;
     match event.event_type {
         CONNECTION_EVENT_CONNECTED => {
-            info!("[{:?}] CONNECTION_EVENT_CONNECTED", connection);
+            crate::trace!("[{:?}] CONNECTION_EVENT_CONNECTED", _connection);
             // server xor client connected.
             // (it seems like server does not need to wait for this)
             ctx.on_connected(None);
@@ -82,9 +80,11 @@ extern "C" fn qconnection_callback_handler(
         // }
         CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT => {
             let raw = unsafe { event.payload.shutdown_initiated_by_transport };
-            info!(
+            crate::trace!(
                 "[{:?}] CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_TRANSPORT ec=0x{:x} status=0x{:x}",
-                connection, raw.error_code, raw.status
+                _connection,
+                raw.error_code,
+                raw.status
             );
             ctx.on_shutdown_initiated_by_transport(raw.error_code, raw.status);
         }
@@ -93,16 +93,17 @@ extern "C" fn qconnection_callback_handler(
         CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER => {
             let raw = unsafe { event.payload.shutdown_initiated_by_peer };
             // let e = windows_core::Error::from_hresult(windows_core::HRESULT::from_win32(raw.error_code ));
-            info!(
+            crate::trace!(
                 "[{:?}] CONNECTION_EVENT_SHUTDOWN_INITIATED_BY_PEER: app ec {}",
-                connection, raw.error_code,
+                _connection,
+                raw.error_code,
             );
             ctx.on_shutdown_initiated_by_peer(raw.error_code);
         }
         // only invoked after user calls connection shutdown.
         // This can happend without peer or transport.
         CONNECTION_EVENT_SHUTDOWN_COMPLETE => {
-            info!("[{:?}] CONNECTION_EVENT_SHUTDOWN_COMPLETE", connection,);
+            crate::trace!("[{:?}] CONNECTION_EVENT_SHUTDOWN_COMPLETE", _connection,);
             ctx.on_shutdown_complete();
         }
         CONNECTION_EVENT_PEER_STREAM_STARTED => {
@@ -110,25 +111,27 @@ extern "C" fn qconnection_callback_handler(
             let raw = unsafe { event.payload.peer_stream_started };
             let h = raw.stream as Handle;
             let is_uni = (raw.flags & STREAM_OPEN_FLAG_UNIDIRECTIONAL) != 0;
-            info!(
+            crate::trace!(
                 "[{:?}] CONNECTION_EVENT_PEER_STREAM_STARTED stream=[{:?}], is_uni = {is_uni}",
-                connection, h
+                _connection,
+                h
             );
             ctx.on_peer_stream_started(h, is_uni);
         }
         CONNECTION_EVENT_RESUMED => {
-            info!("[{:?}] CONNECTION_EVENT_RESUMED", connection,);
+            crate::trace!("[{:?}] CONNECTION_EVENT_RESUMED", _connection,);
         }
         CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED => {
-            info!(
+            crate::trace!(
                 "[{:?}] CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED",
-                connection,
+                _connection,
             );
         }
         _ => {
-            info!(
+            crate::trace!(
                 "[{:?}] CONNECTION_EVENT Unknown {}",
-                connection, event.event_type
+                _connection,
+                event.event_type
             );
         }
     }
@@ -249,7 +252,7 @@ impl QConnection {
             qconnection_callback_handler,
             (&*context) as *const Mutex<QConnectionCtx> as *const c_void,
         );
-        //info!("[{:#?}] Connection front end open", c);
+        //crate::trace!("[{:#?}] Connection front end open", c);
         Self {
             _api: registration.api.clone(),
             inner: SBox::new(c),
