@@ -1,15 +1,13 @@
-// h3 wrappings for msquic
+//! h3 wrappings for msquic
 
-use std::{fmt::Display, sync::Arc, task::Poll};
-
+use crate::core::{conn::QConnection, stream::QStream};
 use bytes::{Buf, BytesMut};
 use h3::quic::{BidiStream, Connection, OpenStreams, RecvStream, SendStream};
 use msquic_sys2::{
     StreamOpenFlags, SEND_FLAG_NONE, STREAM_OPEN_FLAG_NONE, STREAM_OPEN_FLAG_UNIDIRECTIONAL,
     STREAM_SHUTDOWN_FLAG_GRACEFUL,
 };
-
-use crate::{conn::QConnection, stream::QStream};
+use std::{fmt::Display, sync::Arc, task::Poll};
 
 #[derive(Debug)]
 pub struct H3Error {

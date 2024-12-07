@@ -3,7 +3,7 @@ use std::slice;
 use bytes::{Buf, BufMut, BytesMut};
 use msquic_sys2::Buffer;
 
-use crate::SBox;
+use super::utils::SBox;
 
 pub trait QOwnedBuffer {
     fn as_buff_ref(&self) -> QBuffRef;
@@ -221,7 +221,7 @@ mod test {
     use bytes::{BufMut, Bytes, BytesMut};
     use msquic_sys2::Buffer;
 
-    use crate::buffer::debug_raw_buf_to_string;
+    use crate::core::buffer::debug_raw_buf_to_string;
 
     use super::{debug_buf_to_string, QBufWrap, QBuffRef, QBufferVec, QBytesMut, QVecBuffer};
 

@@ -8,13 +8,14 @@ use std::{
     task::Poll,
 };
 
-use crate::{
+use crate::core::{
+    api::QApi,
     buffer::{QBufWrap, QBytesMut},
     conn::QConnection,
     sync::{QSignal, QWakableSig},
     utils::SBox,
-    QApi, QUIC_STATUS_SUCCESS,
 };
+use crate::QUIC_STATUS_SUCCESS;
 use bytes::{Buf, BytesMut};
 use msquic_sys2::{
     Buffer, Handle, SendFlags, Stream, StreamEvent, StreamOpenFlags, StreamShutdownFlags,

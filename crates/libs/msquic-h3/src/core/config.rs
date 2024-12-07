@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use msquic_sys2::{Buffer, Configuration, CredentialConfig, Settings};
 
-use crate::{reg::QRegistration, utils::SBox, QApi};
+use crate::core::api::QApi;
+use crate::core::{reg::QRegistration, utils::SBox};
 
 #[derive(Clone)]
 pub struct QConfiguration {

@@ -11,7 +11,7 @@ fn main() -> Result<()> {
         "--in",
         "./.windows/winmd/Microsoft.MsQuic.winmd",
         "--out",
-        "crates/libs/c/src/Microsoft.rs",
+        "crates/libs/msquic-sys/src/Microsoft.rs",
         "--filter",
         "Microsoft",
         "--config",

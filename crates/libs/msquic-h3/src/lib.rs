@@ -1,36 +1,10 @@
-use std::sync::Arc;
-
-use msquic_sys2::Api;
-
-use utils::SBox;
-
-pub mod buffer;
-pub mod config;
-pub mod conn;
-pub mod listener;
-pub mod reg;
-pub mod stream;
-pub mod sync;
-mod utils;
+pub mod core;
 
 pub mod msh3;
 
 // Some useful defs
 pub const QUIC_STATUS_PENDING: u32 = 0x703e5;
 pub const QUIC_STATUS_SUCCESS: u32 = 0;
-
-#[derive(Clone)]
-pub struct QApi {
-    inner: Arc<SBox<Api>>,
-}
-
-impl Default for QApi {
-    fn default() -> Self {
-        Self {
-            inner: Arc::new(Api::new().into()),
-        }
-    }
-}
 
 // macro for enabling tracing for internals.
 macro_rules! trace {
@@ -55,14 +29,14 @@ mod tests {
     };
     use tokio::sync::oneshot;
 
-    use crate::{
+    use crate::core::{
+        api::QApi,
         buffer::{debug_buf_to_string, QBufferVec, QVecBuffer},
         config::QConfiguration,
         conn::QConnection,
         listener::QListener,
         reg::QRegistration,
         stream::QStream,
-        QApi,
     };
 
     use tracing::info;

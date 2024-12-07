@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use msquic_sys2::{Registration, RegistrationConfig};
 
-use crate::{utils::SBox, QApi};
+use crate::core::{api::QApi, utils::SBox};
 
 #[derive(Clone)]
 pub struct QRegistration {

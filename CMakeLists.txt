@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(msquic-asio)
+project(msquic-asio LANGUAGES)
 
 set(_msquic_version "v2.4.5")
 

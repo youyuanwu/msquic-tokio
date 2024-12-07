@@ -1,8 +1,8 @@
 use crate::{
-    config::QConfiguration,
-    reg::QRegistration,
-    stream::QStream,
-    sync::{QReceiver, QResetChannel, QWakableSig},
+    core::config::QConfiguration,
+    core::reg::QRegistration,
+    core::stream::QStream,
+    core::sync::{QReceiver, QResetChannel, QWakableSig},
 };
 use msquic_sys2::{
     Configuration, Connection, ConnectionEvent, Handle, SendResumptionFlags,
@@ -13,7 +13,8 @@ use msquic_sys2::{
 };
 use std::{ffi::c_void, fmt::Debug, future::poll_fn, io::Error, sync::Mutex, task::Poll};
 
-use crate::{utils::SBox, QApi};
+use crate::core::api::QApi;
+use crate::core::utils::SBox;
 
 pub struct QConnection {
     pub _api: QApi,

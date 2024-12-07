@@ -7,14 +7,15 @@ use msquic_sys2::{
 };
 use tracing::info;
 
-use crate::{
+use crate::core::{
+    api::QApi,
     buffer::{QBufferVec, QVecBuffer},
     config::QConfiguration,
     conn::QConnection,
-    msh3::H3Conn,
+    listener::QListener,
     reg::QRegistration,
-    QApi,
 };
+use crate::msh3::H3Conn;
 
 /// Send a GET request to target server.
 async fn send_get_request(uri: Uri) {
@@ -22,7 +23,7 @@ async fn send_get_request(uri: Uri) {
 
     let app_name = std::ffi::CString::new("testapp").unwrap();
     let config = RegistrationConfig {
-        app_name: app_name.as_ptr() as *const i8,
+        app_name: app_name.as_ptr(),
         execution_profile: EXECUTION_PROFILE_LOW_LATENCY,
     };
     let q_reg = QRegistration::new(&api, &config);
@@ -147,7 +148,7 @@ fn basic_server_test() {
     let api = QApi::default();
     let app_name = std::ffi::CString::new("testapp").unwrap();
     let config = RegistrationConfig {
-        app_name: app_name.as_ptr() as *const i8,
+        app_name: app_name.as_ptr(),
         execution_profile: EXECUTION_PROFILE_LOW_LATENCY,
     };
     let q_reg = QRegistration::new(&api, &config);
@@ -189,7 +190,7 @@ fn basic_server_test() {
             let mut l;
             {
                 let local_address = Addr::ipv4(ADDRESS_FAMILY_UNSPEC, 4568_u16.to_be(), 0);
-                l = crate::listener::QListener::open(&q_req_copy, &q_config);
+                l = QListener::open(&q_req_copy, &q_config);
                 info!("Start listener.");
                 let alpn = QBufferVec::from(args.as_slice());
                 l.start(alpn.as_buffers(), &local_address);

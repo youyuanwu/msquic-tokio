@@ -3,12 +3,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::conn::QConnection;
+use crate::core::conn::QConnection;
 use msquic_sys2::{
     Addr, Buffer, Configuration, Handle, Listener, ListenerEvent, LISTENER_EVENT_NEW_CONNECTION,
 };
 
-use crate::{config::QConfiguration, reg::QRegistration, utils::SBox, QApi};
+use crate::core::{api::QApi, config::QConfiguration, reg::QRegistration, utils::SBox};
 
 pub struct QListener {
     _api: QApi,

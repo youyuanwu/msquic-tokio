@@ -345,14 +345,14 @@ mod tests {
         time::Duration,
     };
 
-    use crate::sync::QWakableQueue;
+    use crate::core::sync::QWakableQueue;
 
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
-    fn read_line(_cx: &mut Context<'_>) -> Poll<String> {
+    fn read_line(cx: &mut Context<'_>) -> Poll<String> {
         println!("readline called");
         // the second poll should work
         if COUNTER.fetch_add(1, std::sync::atomic::Ordering::Acquire) < 1 {
-            _cx.waker().clone().wake();
+            cx.waker().clone().wake_by_ref();
             Poll::Pending
         } else {
             Poll::Ready("Hello, World!".into())
