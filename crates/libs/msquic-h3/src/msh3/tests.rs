@@ -1,10 +1,10 @@
 use bytes::Buf;
-use c2::{
-    CertificateHash, CertificateUnion, CredentialConfig, RegistrationConfig, Settings,
+use http::Uri;
+use msquic_sys2::{
+    Addr, CertificateHash, CertificateUnion, CredentialConfig, RegistrationConfig, Settings,
     ADDRESS_FAMILY_UNSPEC, CREDENTIAL_FLAG_CLIENT, CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION,
     CREDENTIAL_TYPE_CERTIFICATE_HASH, CREDENTIAL_TYPE_NONE, EXECUTION_PROFILE_LOW_LATENCY,
 };
-use http::Uri;
 use tracing::info;
 
 use crate::{
@@ -188,7 +188,7 @@ fn basic_server_test() {
             let q_config = q_config;
             let mut l;
             {
-                let local_address = c2::Addr::ipv4(ADDRESS_FAMILY_UNSPEC, 4568_u16.to_be(), 0);
+                let local_address = Addr::ipv4(ADDRESS_FAMILY_UNSPEC, 4568_u16.to_be(), 0);
                 l = crate::listener::QListener::open(&q_req_copy, &q_config);
                 info!("Start listener.");
                 let alpn = QBufferVec::from(args.as_slice());

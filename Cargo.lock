@@ -196,15 +196,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "325918d6fe32f23b19878fe4b34794ae41fc19ddbe53b10571a4874d44ffd39b"
 
 [[package]]
-name = "c"
-version = "0.1.0"
-dependencies = [
- "mssf-pal",
- "windows",
- "windows-core",
-]
-
-[[package]]
 name = "c-types"
 version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -212,16 +203,6 @@ checksum = "557b349c631f2a0c9650871fd9371a8cee78dda558074a4f636ef3f47e4de17c"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "c2"
-version = "0.1.0"
-dependencies = [
- "bitfield",
- "c-types",
- "libc",
- "serde",
 ]
 
 [[package]]
@@ -473,14 +454,33 @@ name = "msquic"
 version = "0.1.0"
 dependencies = [
  "bytes",
- "c2",
  "h3",
  "hex",
  "http",
+ "msquic-sys2",
  "smol",
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "msquic-sys"
+version = "0.1.0"
+dependencies = [
+ "mssf-pal",
+ "windows",
+ "windows-core",
+]
+
+[[package]]
+name = "msquic-sys2"
+version = "0.1.0"
+dependencies = [
+ "bitfield",
+ "c-types",
+ "libc",
+ "serde",
 ]
 
 [[package]]
@@ -707,7 +707,7 @@ dependencies = [
 name = "simple"
 version = "0.1.0"
 dependencies = [
- "c",
+ "msquic-sys",
  "windows-core",
 ]
 

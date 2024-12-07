@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use c2::{Buffer, Configuration, CredentialConfig, Settings};
+use msquic_sys2::{Buffer, Configuration, CredentialConfig, Settings};
 
 use crate::{reg::QRegistration, utils::SBox, QApi};
 

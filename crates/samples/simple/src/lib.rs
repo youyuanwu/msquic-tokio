@@ -1,6 +1,6 @@
 use std::{ffi::c_void, sync::Arc};
 
-use c::{
+use msquic_sys::{
     Microsoft::MsQuic::{
         MsQuicClose, MsQuicOpenVersion, HQUIC, QUIC_API_TABLE, QUIC_API_VERSION_2,
         QUIC_EXECUTION_PROFILE, QUIC_EXECUTION_PROFILE_LOW_LATENCY,
@@ -30,7 +30,7 @@ impl ApiInner {
                 std::ptr::addr_of_mut!(ret.inner) as *mut *mut c_void,
             )
         };
-        c::QStatus::from_raw(ec).unwrap();
+        QStatus::from_raw(ec).unwrap();
         assert_ne!(ret.inner, std::ptr::null());
         ret
     }

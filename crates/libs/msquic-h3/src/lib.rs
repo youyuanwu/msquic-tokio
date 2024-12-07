@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use c2::Api;
+use msquic_sys2::Api;
 
 use utils::SBox;
 
@@ -47,7 +47,7 @@ mod tests {
     use std::{process::Command, thread, time::Duration};
 
     use bytes::Bytes;
-    use c2::{
+    use msquic_sys2::{
         Addr, CertificateHash, CertificateUnion, CredentialConfig, RegistrationConfig, Settings,
         ADDRESS_FAMILY_UNSPEC, CREDENTIAL_FLAG_CLIENT, CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION,
         CREDENTIAL_TYPE_CERTIFICATE_HASH, CREDENTIAL_TYPE_NONE, EXECUTION_PROFILE_LOW_LATENCY,

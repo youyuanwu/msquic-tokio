@@ -16,7 +16,7 @@ use crate::{
     QApi, QUIC_STATUS_SUCCESS,
 };
 use bytes::{Buf, BytesMut};
-use c2::{
+use msquic_sys2::{
     Buffer, Handle, SendFlags, Stream, StreamEvent, StreamOpenFlags, StreamShutdownFlags,
     StreamStartFlags, STREAM_EVENT_PEER_RECEIVE_ABORTED, STREAM_EVENT_PEER_SEND_ABORTED,
     STREAM_EVENT_PEER_SEND_SHUTDOWN, STREAM_EVENT_RECEIVE, STREAM_EVENT_SEND_COMPLETE,

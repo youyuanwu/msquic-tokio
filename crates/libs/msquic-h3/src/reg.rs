@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use c2::{Registration, RegistrationConfig};
+use msquic_sys2::{Registration, RegistrationConfig};
 
 use crate::{utils::SBox, QApi};
 

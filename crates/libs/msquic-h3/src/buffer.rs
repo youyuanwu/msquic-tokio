@@ -1,7 +1,7 @@
 use std::slice;
 
 use bytes::{Buf, BufMut, BytesMut};
-use c2::Buffer;
+use msquic_sys2::Buffer;
 
 use crate::SBox;
 
@@ -219,7 +219,7 @@ pub fn debug_raw_buf_to_string(b: Buffer) -> String {
 mod test {
 
     use bytes::{BufMut, Bytes, BytesMut};
-    use c2::Buffer;
+    use msquic_sys2::Buffer;
 
     use crate::buffer::debug_raw_buf_to_string;
 

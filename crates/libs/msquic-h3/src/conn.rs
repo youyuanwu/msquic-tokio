@@ -4,7 +4,7 @@ use crate::{
     stream::QStream,
     sync::{QReceiver, QResetChannel, QWakableSig},
 };
-use c2::{
+use msquic_sys2::{
     Configuration, Connection, ConnectionEvent, Handle, SendResumptionFlags,
     CONNECTION_EVENT_CONNECTED, CONNECTION_EVENT_PEER_STREAM_STARTED, CONNECTION_EVENT_RESUMED,
     CONNECTION_EVENT_RESUMPTION_TICKET_RECEIVED, CONNECTION_EVENT_SHUTDOWN_COMPLETE,

@@ -1,5 +1,5 @@
 [package]
-name = "c"
+name = "msquic-sys"
 version = "0.1.0"
 edition = "2021"
 

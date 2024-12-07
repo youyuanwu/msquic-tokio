@@ -3,11 +3,11 @@
 use std::{fmt::Display, sync::Arc, task::Poll};
 
 use bytes::{Buf, BytesMut};
-use c2::{
-    SEND_FLAG_NONE, STREAM_OPEN_FLAG_NONE, STREAM_OPEN_FLAG_UNIDIRECTIONAL,
+use h3::quic::{BidiStream, Connection, OpenStreams, RecvStream, SendStream};
+use msquic_sys2::{
+    StreamOpenFlags, SEND_FLAG_NONE, STREAM_OPEN_FLAG_NONE, STREAM_OPEN_FLAG_UNIDIRECTIONAL,
     STREAM_SHUTDOWN_FLAG_GRACEFUL,
 };
-use h3::quic::{BidiStream, Connection, OpenStreams, RecvStream, SendStream};
 
 use crate::{conn::QConnection, stream::QStream};
 
@@ -82,7 +82,7 @@ impl H3Conn {
     fn poll_open_inner(
         cache: &mut Arc<std::sync::Mutex<Option<H3Stream>>>,
         inner: &Arc<std::sync::Mutex<QConnection>>,
-        flags: c2::StreamOpenFlags,
+        flags: StreamOpenFlags,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Result<H3Stream, H3Error>> {
         // poll the cached stream waiting to be started.

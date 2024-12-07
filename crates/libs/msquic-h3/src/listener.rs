@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::conn::QConnection;
-use c2::{
+use msquic_sys2::{
     Addr, Buffer, Configuration, Handle, Listener, ListenerEvent, LISTENER_EVENT_NEW_CONNECTION,
 };
 
