@@ -3,12 +3,13 @@ cmake_minimum_required(VERSION 3.16)
 project(msquic-asio LANGUAGES)
 
 set(_msquic_version "v2.4.5")
-
+set(_win_pkg_url "https://github.com/microsoft/msquic/releases/download/${_msquic_version}/msquic_windows_x64_Release_schannel.zip")
+set(_linux_pkg_url "https://github.com/microsoft/msquic/releases/download/${_msquic_version}/msquic_linux_x64_Release_openssl.zip")
 if(WIN32)
-  set(release_url "https://github.com/microsoft/msquic/releases/download/${_msquic_version}/msquic_windows_x64_Release_schannel.zip")
+  set(release_url ${_win_pkg_url})
 else()
   # linux
-  set(release_url "https://github.com/microsoft/msquic/releases/download/${_msquic_version}/msquic_linux_x64_Release_openssl.zip")
+  set(release_url ${_linux_pkg_url})
   find_package(OpenSSL REQUIRED)
   # openssl needs version 1.1. ubuntu 20.04 has it, 22.04 is too new.
 endif(WIN32)
@@ -20,8 +21,18 @@ FetchContent_Declare(
   DOWNLOAD_EXTRACT_TIMESTAMP true
   URL ${release_url}
 )
-
 FetchContent_MakeAvailable(msquic_release)
+
+# fetch linux pkg as well on windows for binding generation
+if(WIN32)
+message(STATUS "fetching msquic_linux_release " ${_linux_pkg_url})
+FetchContent_Declare(
+  msquic_linux_release
+  DOWNLOAD_EXTRACT_TIMESTAMP true
+  URL ${_linux_pkg_url}
+)
+FetchContent_MakeAvailable(msquic_linux_release)
+endif(WIN32)
 
 if(WIN32)
 # generate winmd. defer generation task in .metadata csproj.

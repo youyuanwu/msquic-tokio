@@ -8,12 +8,25 @@
     </PropertyGroup>
     <ItemGroup>
         <ScraperRsp Include="scraper.settings.rsp"/>
+        <ConstantsScraperRsp Include="ConstantsScraper.settings.rsp"/>
     </ItemGroup>
     <ItemGroup>
         <ImportLibs Include="..\build\_deps\msquic_release-src\lib\msquic.lib" />
         <Partition Include="MsQuic.c">
-            <TraverseFiles>..\build\_deps\msquic_release-src\include\msquic.h;..\build\_deps\msquic_release-src\include\msqiuc_winuser.h</TraverseFiles>
+            <TraverseFiles>..\build\_deps\msquic_release-src\include\msquic.h;</TraverseFiles>
             <Namespace>Microsoft.MsQuic</Namespace>
+        </Partition>
+        <Partition Include="MsQuic.Win32.c">
+            <TraverseFiles>MsQuic.Win32.h</TraverseFiles>
+            <Namespace>Microsoft.MsQuic.Win32</Namespace>
+        </Partition>
+        <Partition Include="./linux/MsQuic.Linux.c">
+            <TraverseFiles>./linux/MsQuic.Linux.h</TraverseFiles>
+            <Namespace>Microsoft.MsQuic.Linux</Namespace>
+        </Partition>
+        <Partition Include="./macos/MsQuic.MacOs.c">
+            <TraverseFiles>./macos/MsQuic.MacOs.h</TraverseFiles>
+            <Namespace>Microsoft.MsQuic.MacOs</Namespace>
         </Partition>
     </ItemGroup>
     <Target Name="CopyWin32Metadata" AfterTargets="Build">
