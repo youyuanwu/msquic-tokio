@@ -11,9 +11,11 @@ fn main() -> Result<()> {
         "--in",
         "./.windows/winmd/Microsoft.MsQuic.winmd",
         "--out",
-        "crates/libs/msquic-sys/src/Microsoft.rs",
+        "crates/libs/msquic-rs/src/Microsoft.rs",
         "--filter",
         "Microsoft",
+        "!Microsoft.MsQuic.MsQuicOpenVersion", // Skip functions that needs linking
+        "!Microsoft.MsQuic.MsQuicClose",
         "--config",
         "implement",
     ])?;

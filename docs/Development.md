@@ -9,3 +9,8 @@ $env:RUST_LOG = "info"
 cargo test -p c2 -- --nocapture
 cargo test -p msquic -- --nocapture
 ```
+
+One can install msquic from apt:
+```
+sudo apt-get install libmsquic
+```

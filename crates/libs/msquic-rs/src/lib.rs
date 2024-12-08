@@ -25,3 +25,6 @@ pub use win_status::*;
 mod unix_status;
 #[cfg(target_os = "linux")]
 pub use unix_status::*;
+
+mod load;
+pub use load::{MsQuicClose, MsQuicOpenVersion};

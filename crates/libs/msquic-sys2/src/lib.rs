@@ -1112,6 +1112,16 @@ struct ApiTable {
         extern "C" fn(connection: Handle, result: BOOLEAN, tls_alert: TlsAlertCode) -> u32,
 }
 
+// For apt target which has version suffix
+// #[link(name = "msquic")]
+#[cfg(target_os = "linux")]
+#[link(name = ":libmsquic.so.2")]
+extern "C" {
+    fn MsQuicOpenVersion(version: u32, api: &*const ApiTable) -> u32;
+    fn MsQuicClose(api: *const ApiTable);
+}
+
+#[cfg(target_os = "windows")]
 #[link(name = "msquic")]
 extern "C" {
     fn MsQuicOpenVersion(version: u32, api: &*const ApiTable) -> u32;

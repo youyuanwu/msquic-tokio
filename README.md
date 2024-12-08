@@ -5,5 +5,21 @@ Experimental.
 
 Currently can run h3 client and server.
 
+# Build
+msquic lib is dynamically loaded and it is not required for building the rust code.
+
+# Test and run
+## Posix
+Install msquic pkg:
+```sh
+sudo apt-get install libmsquic
+```
+Rust code will load the lib dynamically.
+## Windows
+pwsh 7 packages the msquic.dll. If you install pwsh 7, rust will load it from there.
+
+## Other
+You can download msquic from github release [here](https://github.com/microsoft/msquic/releases) and put the lib to locations where app can load it.
+
 # License
 This project is licensed under the MIT license.

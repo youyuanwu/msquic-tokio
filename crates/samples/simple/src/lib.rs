@@ -1,18 +1,18 @@
-use std::{ffi::c_void, sync::Arc};
+use std::sync::Arc;
 
-use msquic_sys::{
+use msquic_rs::{
     Microsoft::MsQuic::{
-        MsQuicClose, MsQuicOpenVersion, HQUIC, QUIC_API_TABLE, QUIC_API_VERSION_2,
-        QUIC_EXECUTION_PROFILE, QUIC_EXECUTION_PROFILE_LOW_LATENCY,
-        QUIC_EXECUTION_PROFILE_TYPE_MAX_THROUGHPUT, QUIC_EXECUTION_PROFILE_TYPE_REAL_TIME,
-        QUIC_EXECUTION_PROFILE_TYPE_SCAVENGER, QUIC_HANDLE, QUIC_REGISTRATION_CONFIG,
+        HQUIC, QUIC_API_TABLE, QUIC_API_VERSION_2, QUIC_EXECUTION_PROFILE,
+        QUIC_EXECUTION_PROFILE_LOW_LATENCY, QUIC_EXECUTION_PROFILE_TYPE_MAX_THROUGHPUT,
+        QUIC_EXECUTION_PROFILE_TYPE_REAL_TIME, QUIC_EXECUTION_PROFILE_TYPE_SCAVENGER, QUIC_HANDLE,
+        QUIC_REGISTRATION_CONFIG,
     },
-    QStatus,
+    MsQuicClose, MsQuicOpenVersion, QStatus,
 };
 use windows_core::PCSTR;
 
 struct ApiInner {
-    inner: *const QUIC_API_TABLE,
+    inner: *mut QUIC_API_TABLE,
 }
 
 unsafe impl Send for ApiInner {}
@@ -21,17 +21,13 @@ unsafe impl Sync for ApiInner {}
 impl ApiInner {
     pub fn new() -> Self {
         let mut ret = ApiInner {
-            inner: std::ptr::null(),
+            inner: std::ptr::null_mut(),
         };
 
-        let ec = unsafe {
-            MsQuicOpenVersion(
-                QUIC_API_VERSION_2,
-                std::ptr::addr_of_mut!(ret.inner) as *mut *mut c_void,
-            )
-        };
+        let ec =
+            unsafe { MsQuicOpenVersion(QUIC_API_VERSION_2, std::ptr::addr_of_mut!(ret.inner)) };
         QStatus::from_raw(ec).unwrap();
-        assert_ne!(ret.inner, std::ptr::null());
+        assert_ne!(ret.inner, std::ptr::null_mut());
         ret
     }
 
@@ -45,8 +41,8 @@ impl Drop for ApiInner {
         if self.inner.is_null() {
             return;
         }
-        unsafe { MsQuicClose(self.inner as *const c_void) };
-        self.inner = std::ptr::null();
+        unsafe { MsQuicClose(self.inner) };
+        self.inner = std::ptr::null_mut();
     }
 }
 

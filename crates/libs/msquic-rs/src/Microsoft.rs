@@ -157,22 +157,6 @@ pub mod MsQuic {
             }
         }
     }
-    #[inline]
-    pub unsafe fn MsQuicClose(quicapi: *const core::ffi::c_void) {
-        #[link(name = "msquic")]
-        extern "system" {
-            pub fn MsQuicClose(quicapi: *const core::ffi::c_void);
-        }
-        MsQuicClose(quicapi)
-    }
-    #[inline]
-    pub unsafe fn MsQuicOpenVersion(version: u32, quicapi: *mut *mut core::ffi::c_void) -> i32 {
-        #[link(name = "msquic")]
-        extern "system" {
-            pub fn MsQuicOpenVersion(version: u32, quicapi: *mut *mut core::ffi::c_void) -> i32;
-        }
-        MsQuicOpenVersion(version, quicapi)
-    }
     pub const QUIC_ALLOWED_CIPHER_SUITE_AES_128_GCM_SHA256: QUIC_ALLOWED_CIPHER_SUITE_FLAGS =
         QUIC_ALLOWED_CIPHER_SUITE_FLAGS(1i32);
     pub const QUIC_ALLOWED_CIPHER_SUITE_AES_256_GCM_SHA384: QUIC_ALLOWED_CIPHER_SUITE_FLAGS =
