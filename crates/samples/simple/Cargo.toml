@@ -6,5 +6,6 @@ description =  "Example of using the generated MsQuic binding from winmd"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+libloading = "0.8"
 "msquic-sys" = { version = "*", path = "../../libs/msquic-sys", features = ["MsQuic"]}
 "windows-core" = "0.57.0"

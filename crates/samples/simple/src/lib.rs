@@ -171,3 +171,27 @@ mod tests {
         api.registation_close(rh);
     }
 }
+
+#[cfg(test)]
+mod test2 {
+    use msquic_sys::Microsoft::MsQuic::{QUIC_API_TABLE, QUIC_API_VERSION_2};
+
+    #[test]
+    fn dynamic_load() {
+        let lib_name = libloading::library_filename("msquic");
+        let lib = unsafe { libloading::Library::new(lib_name) }.unwrap();
+        let fn_open: libloading::Symbol<
+            unsafe extern "C" fn(u32, *mut *mut QUIC_API_TABLE) -> i32,
+        > = unsafe { lib.get(b"MsQuicOpenVersion") }.unwrap();
+        let fn_close: libloading::Symbol<unsafe extern "C" fn(*const QUIC_API_TABLE)> =
+            unsafe { lib.get(b"MsQuicClose") }.unwrap();
+        let mut api = std::ptr::null_mut::<QUIC_API_TABLE>();
+        let ec = unsafe { fn_open(QUIC_API_VERSION_2, std::ptr::addr_of_mut!(api)) };
+        assert_eq!(
+            ec,
+            msquic_sys::Microsoft::MsQuic::Win32::QUIC_STATUS_SUCCESS.0
+        );
+        assert!(!api.is_null());
+        unsafe { fn_close(api) };
+    }
+}
