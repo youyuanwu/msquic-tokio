@@ -10,3 +10,4 @@ bitfield = "0.14"
 libc = "0.2"
 c-types = "3"
 serde = { version = "1", features = ["derive"] }
+msquic-rs = { path = "../msquic-rs"}

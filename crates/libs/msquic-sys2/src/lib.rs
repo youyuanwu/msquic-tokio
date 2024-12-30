@@ -19,6 +19,7 @@ use c_types::AF_INET6;
 #[allow(unused_imports)]
 use c_types::AF_UNSPEC;
 use libc::c_void;
+use msquic_rs::Microsoft::MsQuic::QUIC_API_TABLE;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
 use std::fmt;
@@ -1114,19 +1115,19 @@ struct ApiTable {
 
 // For apt target which has version suffix
 // #[link(name = "msquic")]
-#[cfg(target_os = "linux")]
-#[link(name = ":libmsquic.so.2")]
-extern "C" {
-    fn MsQuicOpenVersion(version: u32, api: &*const ApiTable) -> u32;
-    fn MsQuicClose(api: *const ApiTable);
-}
+// #[cfg(target_os = "linux")]
+// #[link(name = ":libmsquic.so.2")]
+// extern "C" {
+//     fn MsQuicOpenVersion(version: u32, api: &*const ApiTable) -> u32;
+//     fn MsQuicClose(api: *const ApiTable);
+// }
 
-#[cfg(target_os = "windows")]
-#[link(name = "msquic")]
-extern "C" {
-    fn MsQuicOpenVersion(version: u32, api: &*const ApiTable) -> u32;
-    fn MsQuicClose(api: *const ApiTable);
-}
+// #[cfg(target_os = "windows")]
+// #[link(name = "msquic")]
+// extern "C" {
+//     fn MsQuicOpenVersion(version: u32, api: &*const ApiTable) -> u32;
+//     fn MsQuicClose(api: *const ApiTable);
+// }
 
 //
 // The following starts the "nice" Rust API wrapper on the C interop layer.
@@ -1295,12 +1296,14 @@ impl CredentialConfig {
 
 impl Api {
     pub fn new() -> Api {
-        let new_table: *const ApiTable = ptr::null();
-        let status = unsafe { MsQuicOpenVersion(2, &new_table) };
-        if Status::failed(status) {
+        let mut new_table: *mut QUIC_API_TABLE = ptr::null_mut();
+        let status = unsafe { msquic_rs::MsQuicOpenVersion(2, std::ptr::addr_of_mut!(new_table)) };
+        if Status::failed(status as u32) {
             panic!("MsQuicOpenVersion failure 0x{:x}", status);
         }
-        Api { table: new_table }
+        Api {
+            table: new_table as *const ApiTable,
+        }
     }
 
     pub fn close_listener(&self, listener: Handle) {
@@ -1347,7 +1350,7 @@ impl Api {
 
 impl Drop for Api {
     fn drop(&mut self) {
-        unsafe { MsQuicClose(self.table) };
+        unsafe { msquic_rs::MsQuicClose(self.table as *mut QUIC_API_TABLE) };
     }
 }
 

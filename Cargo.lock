@@ -492,6 +492,7 @@ dependencies = [
  "bitfield",
  "c-types",
  "libc",
+ "msquic-rs",
  "serde",
 ]
 
