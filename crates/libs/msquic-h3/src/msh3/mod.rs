@@ -149,11 +149,42 @@ impl<B: Buf> OpenStreams<B> for H3Conn {
     }
 }
 
+/// Wrapper open stream type
+/// Matching quinn impl
+#[derive(Clone)]
+pub struct H3OpenStream(H3Conn);
+
+impl<B: Buf> OpenStreams<B> for H3OpenStream {
+    type BidiStream = <H3Conn as OpenStreams<B>>::BidiStream;
+
+    type SendStream = <H3Conn as OpenStreams<B>>::SendStream;
+
+    type OpenError = <H3Conn as OpenStreams<B>>::OpenError;
+
+    fn poll_open_bidi(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Result<Self::BidiStream, Self::OpenError>> {
+        <H3Conn as OpenStreams<B>>::poll_open_bidi(&mut self.0, cx)
+    }
+
+    fn poll_open_send(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<Result<Self::SendStream, Self::OpenError>> {
+        <H3Conn as OpenStreams<B>>::poll_open_send(&mut self.0, cx)
+    }
+
+    fn close(&mut self, code: h3::error::Code, reason: &[u8]) {
+        <H3Conn as OpenStreams<B>>::close(&mut self.0, code, reason)
+    }
+}
+
 /// Server accept new streams.
 impl<B: Buf> Connection<B> for H3Conn {
     type RecvStream = H3Stream;
 
-    type OpenStreams = H3Conn;
+    type OpenStreams = H3OpenStream;
 
     type AcceptError = H3Error;
 
@@ -184,7 +215,7 @@ impl<B: Buf> Connection<B> for H3Conn {
     /// Object to create new streams.
     fn opener(&self) -> Self::OpenStreams {
         crate::trace!("msh3 conn opener");
-        self.clone()
+        H3OpenStream(self.clone())
     }
 }
 
