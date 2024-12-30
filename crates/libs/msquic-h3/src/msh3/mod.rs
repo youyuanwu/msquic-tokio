@@ -188,7 +188,8 @@ impl<B: Buf> Connection<B> for H3Conn {
     }
 }
 
-#[derive(Debug)]
+/// TODO: evaluate if clone is ok.
+#[derive(Debug, Clone)]
 pub struct H3Stream {
     inner: QStream,
     shutdown: bool,
